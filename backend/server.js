@@ -26,8 +26,28 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
     username TEXT UNIQUE,
     password TEXT
 )`)
-//middlewaew for verify JWT
+//middleware for verify JWT เพิ่มใฟม่
+function verifyToken(req, res, next) {
 
+    const authHeader = req.headers['authorization'];
+
+    if (!authHeader) {
+        return res.status(403).json({ message: "Token required" });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const secret = JWT_SECRET || "your_fallback_secret";
+
+    jwt.verify(token, secret, (err, user) => {
+
+        if (err) {
+            return res.status(403).json({ message: "Invalid token" });
+        }
+
+        req.user = user;
+        next();
+    });
+}
 
 //API EndPoint
 
