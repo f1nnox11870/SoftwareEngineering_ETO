@@ -6,6 +6,7 @@ import viteLogo from '/vite.svg'
 import './App.css'
 import Login from './components/login'
 import Home from './components/Home'
+import Profile from './components/Profile'
 import ProtectedRoute from './ProtectedRoute'
 function App() {
   const [count, setCount] = useState(0)
@@ -21,6 +22,7 @@ function App() {
 
           <Route element={<ProtectedRoute />}>
             <Route path="/home" element={<Home />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
         </Routes>
       </div>

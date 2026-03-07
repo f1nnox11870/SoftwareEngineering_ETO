@@ -96,3 +96,26 @@ app.post('/login', (req, res) => {
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });
+
+// Profile Endpoint
+app.get('/profile', verifyToken, (req, res) => {
+
+    const userId = req.user.id;
+
+    const sql = "SELECT id, username FROM users WHERE id = ?";
+
+    db.get(sql, [userId], (err, user) => {
+        if (err) {
+            return res.status(500).json({ message: "Database error" });
+        }
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        res.json({
+            id: user.id,
+            username: user.username
+        });
+    });
+});
