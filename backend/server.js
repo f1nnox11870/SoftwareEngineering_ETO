@@ -62,7 +62,7 @@ app.post('/register', async (req, res) => {
     const sql = 'INSERT INTO users (username, password) VALUES (?, ?)';
     db.run(sql, [username, hashedPassword], function (err) {
         if (err) {
-            if(err.error === 19) {
+            if(err.errno === 19) {
                 return res.status(409).json({ message: 'Username already exists' });
             }
             return res.status(500).json({ message: 'Database error' });

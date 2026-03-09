@@ -1,27 +1,23 @@
 import { useState } from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-import Register from './components/Register'  
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import './App.css'
-import Login from './components/login'
 import Home from './components/Home'
+import Login from './components/login'
+import Register from './components/Register'
 import Profile from './components/Profile'
+import Topup from './components/Topup'
 import ProtectedRoute from './ProtectedRoute'
-function App() {
-  const [count, setCount] = useState(0)
 
+function App() {
   return (
     <Router>
       <div className="App">
         <Routes>
-          <Route path="/" element={<Navigate to='/login' />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/login" element={<Login />} />
-
+          <Route path="/"       element={<Home />} />
+          <Route path="/home"   element={<Home />} />
+          <Route path="/topup"  element={<Topup />} />
 
           <Route element={<ProtectedRoute />}>
-            <Route path="/home" element={<Home />} />
             <Route path="/profile" element={<Profile />} />
           </Route>
         </Routes>
