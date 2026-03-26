@@ -10,7 +10,7 @@ function Admin() {
   const [image, setImage] = useState(""); // จะเก็บเป็น Base64 String
   const [description, setDescription] = useState("");
   const [author, setAuthor] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState(""); // เก็บค่าหมวดหมู่ที่เลือก
   const [price, setPrice] = useState(""); // เก็บค่าราคา
   const [isDragging, setIsDragging] = useState(false);
   
@@ -50,11 +50,11 @@ function Admin() {
     const token = localStorage.getItem("token");
 
     if (!image) return alert("กรุณาอัปโหลดรูปหน้าปกด้วยครับ");
+    if (!category) return alert("กรุณาเลือกหมวดหมู่ด้วยครับ"); // เช็คว่าเลือกหมวดหมู่หรือยัง
 
     try {
       await axios.post(
         "http://localhost:3001/admin/add-book",
-        // ส่ง price ไปพร้อมกับข้อมูลอื่นๆ (แปลงเป็นตัวเลขเพื่อความชัวร์)
         { title, author, category, description, image, price: Number(price) },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -121,10 +121,20 @@ function Admin() {
         <label>ผู้แต่ง</label>
         <input style={inputStyle} type="text" value={author} onChange={(e) => setAuthor(e.target.value)} />
 
+        {/* 🔻 เปลี่ยนจาก input เป็น select (Dropdown) 🔻 */}
         <label>หมวดหมู่</label>
-        <input style={inputStyle} type="text" value={category} onChange={(e) => setCategory(e.target.value)} />
+        <select 
+          style={{ ...inputStyle, cursor: "pointer" }} 
+          value={category} 
+          onChange={(e) => setCategory(e.target.value)}
+          required
+        >
+          <option value="" disabled>-- กรุณาเลือกหมวดหมู่ --</option>
+          <option value="นิยาย">นิยาย</option>
+          <option value="มังงะ">มังงะ / การ์ตูน</option>
+        </select>
+        {/* 🔺 สิ้นสุดส่วน Dropdown 🔺 */}
 
-        {/* --- ส่วนที่เพิ่มเข้ามาใหม่: ช่องกรอกราคา --- */}
         <label>ราคา (บาท)</label>
         <input 
           style={inputStyle} 
@@ -136,7 +146,7 @@ function Admin() {
         />
 
         <label>คำอธิบาย</label>
-        <textarea style={{ ...inputStyle, height: "100px" }} value={description} onChange={(e) => setDescription(e.target.value)} />
+        <textarea style={{ ...inputStyle, height: "100px", resize: "vertical" }} value={description} onChange={(e) => setDescription(e.target.value)} />
 
         <button type="submit" style={btnStyle}>บันทึกข้อมูลและอัปเดตหน้า Home</button>
       </form>
@@ -144,7 +154,7 @@ function Admin() {
   );
 }
 
-const inputStyle = { width: "100%", padding: "12px", marginBottom: "15px", border: "1px solid #ddd", borderRadius: "8px", boxSizing: "border-box" };
-const btnStyle = { width: "100%", padding: "15px", background: "#ff4e63", color: "white", border: "none", borderRadius: "8px", fontSize: "16px", fontWeight: "bold", cursor: "pointer" };
+const inputStyle = { width: "100%", padding: "12px", marginBottom: "15px", border: "1px solid #ddd", borderRadius: "8px", boxSizing: "border-box", fontSize: "14px", fontFamily: "Sarabun" };
+const btnStyle = { width: "100%", padding: "15px", background: "#ff4e63", color: "white", border: "none", borderRadius: "8px", fontSize: "16px", fontWeight: "bold", cursor: "pointer", transition: "0.2s" };
 
 export default Admin;
