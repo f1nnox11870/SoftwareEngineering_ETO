@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import '../assets/style.css';
 import Login from './login';
 import Register from './Register';
@@ -24,7 +25,6 @@ const MOCK_NOTIFICATIONS = [
     { id: 5, icon: '💳', title: 'ประวัติการซื้อ',      desc: 'คุณซื้อ "นิยายรักสุดขอบฟ้า" เรียบร้อยแล้ว', time: '2 วันที่แล้ว',      unread: false },
 ];
 
-// 5 banner slides
 const BANNERS = [
     { bg: '#c9d6df', label: 'Banner 1' },
     { bg: '#e2c9d6', label: 'Banner 2' },
@@ -33,69 +33,112 @@ const BANNERS = [
     { bg: '#e2d6c9', label: 'Banner 5' },
 ];
 
-const MOCK_MANGA = Array(10).fill(null).map((_, i) => ({
-    id: i + 1,
-    title: 'Record of Ragnarok',
-    subtitle: 'มหาศึกเทพเจ้าชนมนุษย์ เล่ม ' + (i + 1),
-    author: 'ผู้เขียน: นักเขียน',
-    publisher: 'สำนักพิมพ์: PHOENIX Next',
-    category: 'มังงะ',
-    rating: 5.0,
-    price: '120.00',
-    originalPrice: null,
-}));
-
-const MOCK_NOVELS = Array(10).fill(null).map((_, i) => ({
-    id: i + 1,
-    title: 'นิยายรักสุดขอบฟ้า',
-    subtitle: 'ความรักที่ไม่มีวันลืม เล่ม ' + (i + 1),
-    author: 'ผู้เขียน: นักเขียน',
-    publisher: 'สำนักพิมพ์: สยามอินเตอร์',
-    category: 'นิยายวาย',
-    rating: 5.0,
-    price: '359.00',
-    originalPrice: i % 3 === 0 ? '423.00' : null,
-}));
-
 // ── BookCard ──────────────────────────────────────────
-function BookCard({ book, isLoggedIn }) {
+function BookCard({ book, isLoggedIn, onView }) {
     const [fav, setFav] = useState(false);
     return (
-        <div className="bcard">
-            <div className="bcard-cover">
-                {/* placeholder cover */}
-                <div className="bcard-img-placeholder">
-                    <i className="fas fa-image"></i>
-                    {book.subtitle.includes('เล่ม 1') && (
+        <div className="bcard" style={{ background: 'none', border: 'none', padding: '0' }}>
+            
+            {/* --- ส่วนที่ 1: รูปภาพและปุ่ม Hover --- */}
+            <div className="bcard-cover" style={{ height: '230px', position: 'relative', borderRadius: '8px', overflow: 'hidden' }}>
+                <div className="bcard-img-placeholder" style={{ padding: 0, width: '100%', height: '100%' }}>
+                    {book.image ? (
+                        <img src={book.image} alt={book.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#eee' }}>
+                            <i className="fas fa-image" style={{ fontSize: '40px', color: '#ccc' }}></i>
+                        </div>
+                    )}
+                    
+                    {book.subtitle && book.subtitle.includes('เล่ม 1') && (
                         <span className="bcard-vol-badge">เล่ม 1</span>
                     )}
                 </div>
+
                 {isLoggedIn && (
                     <button
                         className={`bcard-fav ${fav ? 'active' : ''}`}
+                        style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 10 }}
                         onClick={e => { e.stopPropagation(); setFav(v => !v); }}
                     >
                         <i className={fav ? 'fas fa-heart' : 'far fa-heart'}></i>
                     </button>
                 )}
-            </div>
-            <div className="bcard-info">
-                <div className="bcard-title">{book.title}</div>
-                <div className="bcard-sub">{book.subtitle}</div>
-                <div className="bcard-meta">{book.author}</div>
-                <div className="bcard-meta">{book.publisher}</div>
-                <div className="bcard-cat">{book.category}</div>
-                <div className="bcard-rating">
-                    <i className="fas fa-star"></i> {book.rating.toFixed(1)}
+
+                <div className="bcard-info">
+                    <div className="bcard-price-row" style={{ justifyContent: 'center', width: '100%' }}>
+                        {isLoggedIn && (
+                            <button className="bcard-cart" onClick={e => e.stopPropagation()} style={{ width: '40px', height: '40px', borderRadius: '50%' }}>
+                                <i className="fas fa-shopping-cart"></i>
+                            </button>
+                        )}
+                    </div>
                 </div>
-                <div className="bcard-price-row">
-                    <span className="bcard-price">{book.price} บาท</span>
-                    {book.originalPrice && <span className="bcard-orig">{book.originalPrice}</span>}
-                    {isLoggedIn && (
-                        <button className="bcard-cart" onClick={e => e.stopPropagation()}>
-                            <i className="fas fa-shopping-cart"></i>
-                        </button>
-                    )}
+            </div>
+
+            {/* --- ส่วนที่ 2: รายละเอียดใต้รูปภาพ (แสดงตลอดเวลา) --- */}
+            <div className="bcard-details" style={{ 
+                marginTop: '10px', 
+                textAlign: 'left',
+                background: '#fff',
+                padding: '10px',
+                borderRadius: '8px',
+                boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
+            }}>
+                <div className="bcard-title" title={book.title} style={{ 
+                    fontSize: '14px', 
+                    fontWeight: 'bold', 
+                    color: '#333',
+                    marginBottom: '4px',
+                    display: '-webkit-box',
+                    WebkitLineClamp: '2',
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    lineHeight: '1.2',
+                    height: '34px' 
+                }}>
+                    {book.title}
+                </div>
+
+                <div className="bcard-category" style={{ 
+                    fontSize: '11px', 
+                    color: '#fff', 
+                    background: '#ff4e63', 
+                    display: 'inline-block', 
+                    padding: '2px 8px', 
+                    borderRadius: '10px', 
+                    marginBottom: '6px' 
+                }}>
+                    {book.category || 'ไม่ระบุหมวดหมู่'}
+                </div>
+                
+                <div className="bcard-author" style={{ 
+                    fontSize: '12px', 
+                    color: '#888', 
+                    marginBottom: '8px', 
+                    whiteSpace: 'nowrap', 
+                    overflow: 'hidden', 
+                    textOverflow: 'ellipsis' 
+                }}>
+                    <strong style={{ color: '#555' }}>Author: </strong>
+                    {book.author || 'ไม่ระบุชื่อผู้แต่ง'}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="bcard-price-bottom" style={{ fontSize: '14px', fontWeight: 'bold', color: '#ff4e63' }}>
+                        {book.price === 0 || book.price === '0' || book.price === '0.00' ? 'ฟรี' : `฿ ${book.price}`}
+                    </div>
+                    
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onView(book); }}
+                        style={{ 
+                            background: '#333', color: '#fff', border: 'none', 
+                            padding: '4px 10px', borderRadius: '4px', fontSize: '12px', 
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' 
+                        }}
+                    >
+                        <i className="fas fa-eye"></i> View
+                    </button>
                 </div>
             </div>
         </div>
@@ -103,11 +146,14 @@ function BookCard({ book, isLoggedIn }) {
 }
 
 // ── BookRow ───────────────────────────────────────────
-function BookRow({ title, books, isLoggedIn, showSeeAll = true }) {
+function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView }) {
     const rowRef = useRef(null);
     const scroll = (dir) => {
         if (rowRef.current) rowRef.current.scrollBy({ left: dir * 700, behavior: 'smooth' });
     };
+
+    if (!books || books.length === 0) return null;
+
     return (
         <section className="brow-section">
             <div className="brow-header">
@@ -120,7 +166,7 @@ function BookRow({ title, books, isLoggedIn, showSeeAll = true }) {
                 </button>
                 <div className="brow-track" ref={rowRef}>
                     {books.map(book => (
-                        <BookCard key={book.id} book={book} isLoggedIn={isLoggedIn} />
+                        <BookCard key={book.id} book={book} isLoggedIn={isLoggedIn} onView={onView} />
                     ))}
                 </div>
                 <button className="brow-arrow right" onClick={() => scroll(1)}>
@@ -134,8 +180,15 @@ function BookRow({ title, books, isLoggedIn, showSeeAll = true }) {
 // ── Home ──────────────────────────────────────────────
 function Home() {
     const navigate = useNavigate();
+    
+    // State สำหรับข้อมูลหนังสือและหน้าต่าง View
+    const [books, setBooks] = useState([]);
+    const [viewBook, setViewBook] = useState(null); // เก็บหนังสือที่ถูกกด View
+
     const [username, setUsername]       = useState('');
     const [isLoggedIn, setIsLoggedIn]   = useState(false);
+    const [role, setRole] = useState(null);
+
     const [modal, setModal]             = useState(null);
     const [activeTab, setActiveTab]     = useState('แนะนำ');
     const [megaOpen, setMegaOpen]       = useState(false);
@@ -152,16 +205,35 @@ function Home() {
     const notifRef   = useRef(null);
     const coinInterval = useRef(null);
 
+    // ดึงข้อมูลหนังสือทั้งหมดจาก Database
+    useEffect(() => {
+        const fetchBooks = async () => {
+            try {
+                const res = await axios.get('http://localhost:3001/books');
+                setBooks(res.data);
+            } catch (err) {
+                console.error("Error fetching books:", err);
+            }
+        };
+        fetchBooks();
+    }, []);
+
     useEffect(() => {
         const token = localStorage.getItem('token');
         const user  = localStorage.getItem('username');
         if (token) { setIsLoggedIn(true); if (user) setUsername(user); }
     }, []);
 
-    // Fetch coins จาก API และ poll ทุก 30 วินาที (real-time)
+    // Fetch coins
     useEffect(() => {
         const fetchCoins = async () => {
             const token = localStorage.getItem('token');
+            const role = localStorage.getItem('role');
+
+            if (token) {
+                setIsLoggedIn(true);
+                setRole(role);
+            }
             if (!token) return;
             try {
                 const res = await axios.get('http://localhost:3001/profile', {
@@ -169,7 +241,6 @@ function Home() {
                 });
                 setCoins(res.data.coins ?? 0);
             } catch {
-                // ถ้า API ยังไม่มี field coins ให้แสดง 0
                 setCoins(0);
             }
         };
@@ -207,12 +278,10 @@ function Home() {
         setIsLoggedIn(true); setUsername(name); setModal(null);
     };
 
-    // Banner: scroll to exact slide position
     const goSlide = (idx) => {
         const next = Math.max(0, Math.min(BANNERS.length - 1, idx));
         setBannerIdx(next);
         if (bannerRef.current) {
-            // each slide = 1/3 of visible width (we show 3 at a time)
             const slideW = bannerRef.current.scrollWidth / BANNERS.length;
             bannerRef.current.scrollTo({ left: next * slideW, behavior: 'smooth' });
         }
@@ -222,6 +291,10 @@ function Home() {
         if (e.target.classList.contains('modal-overlay')) setModal(null);
     };
 
+    // กรองหนังสือ
+    const mangaBooks = books.filter(b => b.category === 'มังงะ' || b.category === 'การ์ตูน');
+    const novelBooks = books.filter(b => b.category === 'นิยาย' || b.category?.includes('นิยาย'));
+
     return (
         <div className="home-page">
 
@@ -230,14 +303,12 @@ function Home() {
                 <div className="navbar-inner">
 
                 <div className="nav-left">
-                    {/* Logo icon only */}
-                    <div className="nav-logo">
+                    <div className="nav-logo" onClick={() => navigate('/')} style={{cursor:'pointer'}}>
                         <div className="nav-logo-box">
                             <i className="fas fa-book-open"></i>
                         </div>
                     </div>
 
-                    {/* Hamburger */}
                     <div className="mega-wrap" ref={megaRef}>
                         <button className="nav-hamburger" onClick={() => setMegaOpen(v => !v)}>
                             <i className="fas fa-bars"></i>
@@ -278,7 +349,6 @@ function Home() {
                     </div>
                 </div>
 
-                {/* Search — Center */}
                 <div className="nav-center">
                     <div className="nav-search">
                         <input type="text" placeholder="วันนี้อ่านอะไรดี?" />
@@ -286,10 +356,17 @@ function Home() {
                     </div>
                 </div>
 
-                {/* Right */}
                 <div className="nav-right">
                         {isLoggedIn ? (
                             <>
+                            {role === 'admin' && (
+                                    <button 
+                                        className="btn-admin"
+                                        onClick={() => navigate('/admin')}
+                                    >
+                                        จัดการเนื้อหา
+                                    </button>
+                                )}
                                 <div className="notif-wrap" ref={notifRef}>
                                     <button className="nav-icon-btn pos-rel" onClick={() => { setNotifOpen(v => !v); setProfileOpen(false); }}>
                                         <i className="fas fa-bell"></i>
@@ -336,7 +413,6 @@ function Home() {
                                         <i className="fas fa-user-circle nav-avatar"></i>
                                         <div className="nav-user-info">
                                             <span className="nav-username">{username}</span>
-                                           
                                         </div>
                                     </button>
                                     {profileOpen && (
@@ -366,7 +442,7 @@ function Home() {
                                             <div className="pd-item"><i className="fas fa-history"></i> ประวัติซื้อ</div>
                                             <div className="pd-item" onClick={() => navigate('/topup')}><i className="fas fa-coins"></i> ซื้อเหรียญ</div>
                                             <div className="pd-divider"></div>
-                                            <div className="pd-item"><i className="fas fa-cog"></i> ตั้งค่าบัญชี</div>
+                                            <div className="pd-item" onClick={() => navigate('/settingprofile')}><i className="fas fa-cog"></i> ตั้งค่าบัญชี</div>
                                             <div className="pd-divider"></div>
                                             <div className="pd-logout" onClick={handleLogout}>
                                                 <i className="fas fa-sign-out-alt"></i> ออกจากระบบ
@@ -383,7 +459,6 @@ function Home() {
                         )}
                     </div>
                 </div>
-
             </header>
 
             {/* ══ SUB-TABS BAR ══ */}
@@ -443,11 +518,17 @@ function Home() {
                 </div>
             </section>
 
-            {/* ══ BOOK ROWS ══ */}
-            <BookRow title="มังงะ"  books={MOCK_MANGA}  isLoggedIn={isLoggedIn} />
-            <BookRow title="นิยาย" books={MOCK_NOVELS} isLoggedIn={isLoggedIn} />
+            {/* ══ BOOK ROWS (ส่ง onView เข้าไปด้วย) ══ */}
+            <BookRow title="มังงะ&การ์ตูน"  books={mangaBooks}  isLoggedIn={isLoggedIn} onView={setViewBook} />
+            <BookRow title="นิยาย" books={novelBooks} isLoggedIn={isLoggedIn} onView={setViewBook} />
+            
+            {books.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '50px 0', color: '#888' }}>
+                    กำลังโหลดข้อมูลหนังสือ หรือ ยังไม่มีหนังสือในระบบ...
+                </div>
+            )}
 
-            {/* ══ MODAL ══ */}
+            {/* ══ MODAL เข้าสู่ระบบ / สมัครสมาชิก ══ */}
             {modal && (
                 <div className="modal-overlay" onClick={handleOverlayClick}>
                     {modal === 'login' && (
@@ -463,6 +544,51 @@ function Home() {
                             onSwitch={() => setModal('login')}
                         />
                     )}
+                </div>
+            )}
+
+            {/* ══ MODAL สำหรับดูรายละเอียดหนังสือ (View Description) ══ */}
+            {viewBook && (
+                <div className="modal-overlay" onClick={() => setViewBook(null)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div onClick={e => e.stopPropagation()} style={{ background: '#fff', padding: '25px', borderRadius: '12px', maxWidth: '550px', width: '90%', position: 'relative', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+                        
+                        <button onClick={() => setViewBook(null)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#888' }}>
+                            <i className="fas fa-times"></i>
+                        </button>
+                        
+                        <div style={{ display: 'flex', gap: '20px', marginTop: '10px' }}>
+                            <img src={viewBook.image || 'https://via.placeholder.com/150'} alt={viewBook.title} style={{ width: '130px', height: '190px', objectFit: 'cover', borderRadius: '8px', boxShadow: '0 2px 6px rgba(0,0,0,0.1)' }} />
+                            <div style={{ flex: 1 }}>
+                                <h3 style={{ margin: '0 0 10px 0', color: '#222', fontSize: '20px', lineHeight: '1.3' }}>{viewBook.title}</h3>
+                                <div style={{ fontSize: '14px', color: '#666', marginBottom: '6px' }}><strong>ผู้แต่ง:</strong> {viewBook.author || 'ไม่ระบุ'}</div>
+                                <div style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
+                                    <strong>หมวดหมู่:</strong> <span style={{ background: '#ff4e63', color: '#fff', padding: '2px 8px', borderRadius: '10px', fontSize: '12px', marginLeft: '5px' }}>{viewBook.category}</span>
+                                </div>
+                                <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#ff4e63', marginTop: '10px' }}>
+                                    {viewBook.price === 0 || viewBook.price === '0' || viewBook.price === '0.00' ? 'อ่านฟรี' : `฿ ${viewBook.price}`}
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr style={{ margin: '20px 0 15px 0', border: 'none', borderTop: '1px solid #eee' }} />
+                        
+                        <h4 style={{ margin: '0 0 10px 0', color: '#333', fontSize: '16px' }}>เรื่องย่อ / รายละเอียด</h4>
+                        
+                        <div style={{ fontSize: '14px', color: '#555', lineHeight: '1.6', maxHeight: '180px', overflowY: 'auto', paddingRight: '10px' }}>
+                            {viewBook.description || 'ไม่มีรายละเอียดสำหรับหนังสือเล่มนี้'}
+                        </div>
+
+                        <div style={{ marginTop: '25px', display: 'flex', gap: '10px' }}>
+                            {isLoggedIn && (
+                                <button style={{ flex: 1, padding: '12px', background: '#ff4e63', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px', transition: '0.2s' }}>
+                                    <i className="fas fa-shopping-cart"></i> เพิ่มลงตะกร้า
+                                </button>
+                            )}
+                            <button onClick={() => setViewBook(null)} style={{ flex: isLoggedIn ? 1 : 'none', width: isLoggedIn ? 'auto' : '100%', padding: '12px', background: '#f5f5f5', color: '#333', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' }}>
+                                ปิดหน้าต่าง
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
