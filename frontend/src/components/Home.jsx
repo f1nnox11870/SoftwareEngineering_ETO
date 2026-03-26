@@ -320,7 +320,10 @@ function Home() {
                                         </div>
                                     )}
                                 </div>
-                                <button className="nav-icon-btn pos-rel">
+                                <button 
+                                    className="nav-icon-btn pos-rel"
+                                    onClick={() => navigate('/favorites')}
+                                >
                                     <i className="fas fa-heart"></i>
                                     <span className="nbadge red">1</span>
                                 </button>
