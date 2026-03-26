@@ -10,8 +10,8 @@ const port = 3001
 const JWT_SECRET = process.env.JWT_SECRET
 
 app.use(cors());
-app.use(express.json());
-
+app.use(express.json({ limit: '50mb' })); // เพิ่มบรรทัดนี้
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const db = new sqlite3.Database('./users.db', (err) => {
 
     if (err){
@@ -20,7 +20,29 @@ const db = new sqlite3.Database('./users.db', (err) => {
     console.log('connect to the users database.', err);
 
 });
+// 📚 books table
+db.run(`CREATE TABLE IF NOT EXISTS books (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    author TEXT,
+    category TEXT,
+    description TEXT,
+    image TEXT,
+    price REAL DEFAULT 0,
+    likes INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 
+// 📖 episodes table
+db.run(`CREATE TABLE IF NOT EXISTS episodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER,
+    episode_number INTEGER,
+    title TEXT,
+    content TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (book_id) REFERENCES books(id)
+)`);
 db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
@@ -123,23 +145,34 @@ app.post('/login', (req, res) => {
     })
 });
 
-
-// admin endpoint
-app.post('/admin/add-book', verifyToken, isAdmin, (req, res) => {
-    // logic เพิ่มหนังสือ
-});
-function isAdmin(req, res, next) {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: 'Access denied' });
-    }
-    next();
-}
-
-
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });
+//insery content
+app.post('/admin/add-book', verifyToken, (req, res) => {
+    // 1. รับค่า price มาจาก React
+    const { title, author, category, description, image, price } = req.body; 
 
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden: Admin only" });
+    }
+
+    // 2. เพิ่ม price เข้าไปในคำสั่ง SQL
+    const sql = `INSERT INTO books (title, author, category, description, image, price, likes) 
+                 VALUES (?, ?, ?, ?, ?, ?, 0)`;
+    
+    // 3. แนบตัวแปร price ไปด้วย (ถ้าไม่ได้กรอกมาให้เป็น 0)
+    db.run(sql, [title, author, category, description, image, price || 0], function(err) {
+        if (err) {
+            console.error("Database error:", err.message); // จะช่วยปริ้นท์บอกใน Terminal ว่า DB พังเพราะอะไร
+            return res.status(500).json({ message: 'Database error', error: err.message });
+        }
+        res.status(201).json({ 
+            message: 'Book added successfully', 
+            bookId: this.lastID 
+        });
+    });
+});
 // Profile Endpoint
 app.get('/profile', verifyToken, (req, res) => {
 
@@ -160,5 +193,15 @@ app.get('/profile', verifyToken, (req, res) => {
             id: user.id,
             username: user.username
         });
+    });
+});
+// API สำหรับดึงหนังสือทั้งหมด (ใช้ใน Home.jsx)
+app.get('/books', (req, res) => {
+    const sql = `SELECT * FROM books ORDER BY created_at DESC`;
+    db.all(sql, [], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ message: 'Database error' });
+        }
+        res.json(rows); // ส่งข้อมูลหนังสือทั้งหมดกลับไปให้ Front-end
     });
 });
