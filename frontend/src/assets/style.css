@@ -537,3 +537,12 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
     transition: background 0.12s;
 }
 .notif-footer:hover { background: #fff5ec; }
+.btn-admin {
+    background: #ff9800;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    margin-right: 10px;
+    cursor: pointer;
+}

@@ -13,6 +13,8 @@ function Login({ onClose, onSwitch, onLoginSuccess }) {
         try {
             const response = await axios.post('http://localhost:3001/login', { username, password });
             localStorage.setItem('token', response.data.token);
+            const payload = JSON.parse(atob(response.data.token.split('.')[1]));
+            localStorage.setItem('role', payload.role);
             localStorage.setItem('username', username);
             if (onLoginSuccess) onLoginSuccess(username);
             if (onClose) onClose();

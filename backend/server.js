@@ -24,8 +24,37 @@ const db = new sqlite3.Database('./users.db', (err) => {
 db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
-    password TEXT
-)`)
+    password TEXT,
+    role TEXT DEFAULT 'user'
+)`, async (err) => {
+    if (err) {
+        console.error(err.message);
+    } else {
+        console.log('Users table ready');
+
+        // 🔥 เรียกตรงนี้แทน
+        await createAdmin();
+    }
+});
+// สร้าง admin
+const createAdmin = async () => {
+    const username = 'admin123';
+    const password = '11111111';
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    db.run(
+        `INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)`,
+        [username, hashedPassword, 'admin'],
+        function (err) {
+            if (err) console.error(err.message);
+            else console.log('✅ Admin ready');
+        }
+    );
+};
+
+createAdmin();
+
 //middleware for verify JWT เพิ่มใฟม่
 function verifyToken(req, res, next) {
 
@@ -89,10 +118,24 @@ app.post('/login', (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
         const secret = JWT_SECRET || 'your_fallback_secret';
-        const token = jwt.sign({ id: user.id , username: user.username}, secret, { expiresIn: '1h' });
+        const token = jwt.sign({ id: user.id , username: user.username , role: user.role }, secret, { expiresIn: '1h' });
         res.json({ message: 'Login successful', token });
     })
 });
+
+
+// admin endpoint
+app.post('/admin/add-book', verifyToken, isAdmin, (req, res) => {
+    // logic เพิ่มหนังสือ
+});
+function isAdmin(req, res, next) {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied' });
+    }
+    next();
+}
+
+
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });

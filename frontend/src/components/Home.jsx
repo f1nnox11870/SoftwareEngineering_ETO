@@ -136,6 +136,9 @@ function Home() {
     const navigate = useNavigate();
     const [username, setUsername]       = useState('');
     const [isLoggedIn, setIsLoggedIn]   = useState(false);
+    const [role, setRole] = useState(null);
+
+
     const [modal, setModal]             = useState(null);
     const [activeTab, setActiveTab]     = useState('แนะนำ');
     const [megaOpen, setMegaOpen]       = useState(false);
@@ -162,6 +165,12 @@ function Home() {
     useEffect(() => {
         const fetchCoins = async () => {
             const token = localStorage.getItem('token');
+            const role = localStorage.getItem('role');
+
+            if (token) {
+                setIsLoggedIn(true);
+                setRole(role);
+            }
             if (!token) return;
             try {
                 const res = await axios.get('http://localhost:3001/profile', {
@@ -290,6 +299,14 @@ function Home() {
                 <div className="nav-right">
                         {isLoggedIn ? (
                             <>
+                            {role === 'admin' && (
+                                    <button 
+                                        className="btn-admin"
+                                        onClick={() => navigate('/admin')}
+                                    >
+                                        จัดการเนื้อหา
+                                    </button>
+                                )}
                                 <div className="notif-wrap" ref={notifRef}>
                                     <button className="nav-icon-btn pos-rel" onClick={() => { setNotifOpen(v => !v); setProfileOpen(false); }}>
                                         <i className="fas fa-bell"></i>
