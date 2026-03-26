@@ -7,6 +7,7 @@ import Register from './components/Register'
 import Profile from './components/Profile'
 import Topup from './components/Topup'
 import ProtectedRoute from './ProtectedRoute'
+import Admin from './components/Admin';
 
 function App() {
   return (
@@ -16,7 +17,7 @@ function App() {
           <Route path="/"       element={<Home />} />
           <Route path="/home"   element={<Home />} />
           <Route path="/topup"  element={<Topup />} />
-
+          <Route path="/admin" element={<Admin />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/profile" element={<Profile />} />
           </Route>
