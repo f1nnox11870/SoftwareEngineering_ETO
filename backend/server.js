@@ -58,6 +58,14 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
         await createAdmin();
     }
 });
+// เพิ่ม image
+db.run(`ALTER TABLE users ADD COLUMN image TEXT`, (err) => {
+    if (err) {
+        console.log("Image column may already exist");
+    } else {
+        console.log("Image column added");
+    }
+});
 // สร้าง admin
 const createAdmin = async () => {
     const username = 'admin123';
@@ -192,8 +200,59 @@ app.get('/profile', verifyToken, (req, res) => {
         res.json({
             id: user.id,
             username: user.username
+            image: user.image || null
         });
     });
+});
+// ================= UPDATE USERNAME =================
+app.put('/profile/username', verifyToken, (req, res) => {
+
+    const userId = req.user.id;
+    const { username } = req.body;
+
+    const sql = "UPDATE users SET username = ? WHERE id = ?";
+
+    db.run(sql, [username, userId], function(err) {
+        if (err) return res.status(500).json({ message: "Error" });
+
+        res.json({ message: "Username updated" });
+    });
+
+});
+// ================= CHANGE PASSWORD =================
+app.put('/profile/password', verifyToken, async (req, res) => {
+
+    const userId = req.user.id;
+    const { oldPassword, newPassword } = req.body;
+
+    db.get("SELECT password FROM users WHERE id = ?", [userId], async (err, user) => {
+
+        const match = await bcrypt.compare(oldPassword, user.password);
+
+        if (!match) {
+            return res.status(401).json({ message: "Wrong password" });
+        }
+
+        const hashed = await bcrypt.hash(newPassword, 10);
+
+        db.run("UPDATE users SET password = ? WHERE id = ?", [hashed, userId]);
+
+        res.json({ message: "Password updated" });
+    });
+
+});
+// ================= UPDATE IMAGE =================
+app.put('/profile/image', verifyToken, (req, res) => {
+
+    const userId = req.user.id;
+    const { image } = req.body;
+
+    db.run("UPDATE users SET image = ? WHERE id = ?", [image, userId], (err) => {
+        if (err) return res.status(500).json({ message: "Error" });
+
+        res.json({ message: "Image updated" });
+    });
+
 });
 // API สำหรับดึงหนังสือทั้งหมด (ใช้ใน Home.jsx)
 app.get('/books', (req, res) => {

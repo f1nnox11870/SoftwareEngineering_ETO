@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import sakura from "../assets/sakura.mp4";   // adjust path if needed
 
 function Profile() {
 
   const [user, setUser] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
 
+  const token = localStorage.getItem("token");
+
+  // ================= LOAD PROFILE =================
   useEffect(() => {
-
-    const token = localStorage.getItem("token");
-
     axios.get("http://localhost:3001/profile", {
       headers: {
         Authorization: `Bearer ${token}`
@@ -17,125 +18,196 @@ function Profile() {
     })
     .then(res => {
       setUser(res.data);
+      setNewUsername(res.data.username);
     });
-
   }, []);
+
+  // ================= UPDATE USERNAME =================
+  const updateUsername = () => {
+    axios.put("http://localhost:3001/profile/username",
+      { username: newUsername },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    ).then(() => {
+      alert("Updated!");
+      window.location.reload();
+    });
+  };
+
+  // ================= IMAGE UPLOAD =================
+  const handleImage = (e) => {
+    const file = e.target.files[0];
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      uploadImage(reader.result);
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const uploadImage = (img) => {
+    axios.put("http://localhost:3001/profile/image",
+      { image: img },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    ).then(() => {
+      alert("Image updated!");
+      window.location.reload();
+    });
+  };
+
+  // ================= CHANGE PASSWORD =================
+  const changePassword = () => {
+    const oldPassword = document.getElementById("oldPass").value;
+    const newPassword = document.getElementById("newPass").value;
+
+    axios.put("http://localhost:3001/profile/password",
+      { oldPassword, newPassword },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    )
+    .then(() => alert("Password updated!"))
+    .catch(() => alert("Wrong password"));
+  };
 
   if (!user) return <h2>Loading...</h2>;
 
   return (
-
     <div style={{
-      position:"relative",
-      height:"100vh",
-      width:"100%",
-      overflow:"hidden"
+      minHeight: "100vh",
+      background: "white",
+      padding: "40px",
+      fontFamily: "Arial",
+      color: "black"
     }}>
 
-      {/* Background Video */}
-      <video
-        autoPlay
-        loop
-        muted
-        style={{
-          position:"absolute",
-          width:"100%",
-          height:"100%",
-          objectFit:"cover",
-          zIndex:-1
-        }}
-      >
-        <source src={sakura} type="video/mp4" />
-      </video>
-
-      {/* Profile Card */}
       <div style={{
-        display:"flex",
-        justifyContent:"center",
-        alignItems:"center",
-        height:"100%"
+        maxWidth: "900px",
+        margin: "0 auto",
+        background: "white"
       }}>
 
+        <h2 style={{marginBottom:"20px"}}>Account Settings</h2>
+
         <div style={{
-          width:"850px",
-          background:"rgba(255,255,255,0.95)",
-          padding:"40px",
-          borderRadius:"12px",
-          boxShadow:"0px 10px 30px rgba(0,0,0,0.3)",
-          color:"black"
+          display:"flex",
+          borderTop:"1px solid #eee",
+          paddingTop:"20px"
         }}>
 
-          <h2 style={{marginBottom:"30px"}}>Account Settings</h2>
+          {/* LEFT SIDE */}
+          <div style={{
+            width:"200px",
+            borderRight:"1px solid #eee",
+            paddingRight:"20px"
+          }}>
 
-          <div style={{display:"flex", gap:"50px"}}>
+            <p style={{fontSize:"14px"}}>Profile</p>
 
-            {/* Avatar */}
-            <div style={{textAlign:"center"}}>
-
+            {user.image ? (
+              <img 
+                src={user.image} 
+                style={{
+                  width:"120px",
+                  height:"120px",
+                  borderRadius:"8px",
+                  objectFit:"cover",
+                  marginBottom:"10px"
+                }}
+              />
+            ) : (
               <div style={{
                 width:"120px",
                 height:"120px",
                 background:"#ddd",
-                borderRadius:"10px"
+                borderRadius:"8px",
+                marginBottom:"10px"
               }}></div>
+            )}
 
-              <p style={{marginTop:"10px"}}>Profile Photo</p>
+            <input type="file" onChange={handleImage} />
+
+          </div>
+
+          {/* RIGHT SIDE */}
+          <div style={{flex:1, paddingLeft:"30px"}}>
+
+            {/* USERNAME */}
+            <div style={{
+              display:"flex",
+              justifyContent:"space-between",
+              padding:"15px 0",
+              borderBottom:"1px solid #eee"
+            }}>
+
+              <div>
+                <p style={{color:"#888", fontSize:"14px"}}>Username</p>
+
+                {editing ? (
+                  <>
+                    <input 
+                      value={newUsername}
+                      onChange={(e)=>setNewUsername(e.target.value)}
+                    />
+                    <button onClick={updateUsername}>Save</button>
+                  </>
+                ) : (
+                  <p>{user.username}</p>
+                )}
+
+              </div>
+
+              <button onClick={()=>setEditing(!editing)}>
+                {editing ? "Cancel" : "Edit"}
+              </button>
 
             </div>
 
-            {/* Info */}
-            <div style={{flex:1}}>
-
-              {/* Username */}
-              <div style={{
-                display:"flex",
-                justifyContent:"space-between",
-                alignItems:"center",
-                padding:"15px 0",
-                borderBottom:"1px solid #eee"
-              }}>
-
-                <div>
-                  <p style={{color:"#888", fontSize:"14px"}}>Username</p>
-                  <p>{user.username}</p>
-                </div>
-
-                <button style={{
-                  padding:"6px 16px",
-                  border:"1px solid #ccc",
-                  background:"white",
-                  borderRadius:"6px",
-                  cursor:"pointer"
-                }}>
-                  Edit
-                </button>
-
+            {/* EMAIL */}
+            <div style={{
+              display:"flex",
+              justifyContent:"space-between",
+              padding:"15px 0",
+              borderBottom:"1px solid #eee"
+            }}>
+              <div>
+                <p style={{color:"#888", fontSize:"14px"}}>Email</p>
+                <p>{user.username}@gmail.com</p>
               </div>
+            </div>
 
-              {/* Email */}
-              <div style={{
-                display:"flex",
-                justifyContent:"space-between",
-                alignItems:"center",
-                padding:"15px 0"
-              }}>
+            {/* PASSWORD */}
+            <div style={{marginTop:"30px"}}>
 
-                <div>
-                  <p style={{color:"#888", fontSize:"14px"}}>Email</p>
-                  <p>{user.username}@gmail.com</p>
-                </div>
+              <h3>Change Password</h3>
 
-                <button style={{
-                  padding:"6px 16px",
-                  border:"1px solid #ccc",
-                  background:"white",
-                  borderRadius:"6px",
-                  cursor:"pointer"
-                }}>
-                  Edit
-                </button>
+              <input 
+                id="oldPass"
+                placeholder="Old password"
+                type="password"
+                style={{display:"block", marginBottom:"10px"}}
+              />
 
-              </div>
+              <input 
+                id="newPass"
+                placeholder="New password"
+                type="password"
+                style={{display:"block", marginBottom:"10px"}}
+              />
+
+              <button onClick={changePassword}>
+                Update Password
+              </button>
 
             </div>
 
@@ -146,8 +218,8 @@ function Profile() {
       </div>
 
     </div>
-
   );
 }
 
 export default Profile;
+
