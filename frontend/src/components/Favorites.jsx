@@ -1,173 +1,113 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import '../assets/settingprofile.css'; 
-
-// ── Constants สำหรับ Navbar (ก๊อปมาให้เหมือนกันทุกหน้า) ──
-const MENU_ITEMS = [
-    { label: 'นิยาย', subs: ['นิยายรักโรแมนติก','นิยายวาย','นิยายแฟนตาซี','นิยายสืบสวน','นิยายกำลังภายใน', 'ไลท์โนเวล','วรรณกรรมทั่วไป','นิยายยูริ','กวีนิพนธ์','แฟนเฟิค'] },
-    { label: 'การ์ตูน', subs: [] },
-    { label: 'อีบุ๊กทั่วไป', subs: [] },
-    { label: 'นิตยสาร', subs: [] },
-    { label: 'หนังสือพิมพ์', subs: [] },
-    { label: 'อีบุ๊กจัดชุด', subs: [] },
-];
-const ROMANCE_SUBS = ['นิยายรักวัยรุ่น','นิยายรักแฟนตาซี','นิยายรักจีนโบราณ','นิยายรักจีนปัจจุบัน','นิยายรักกำลังภายใน','นิยายรักผู้ใหญ่'];
+import '../assets/style.css'; // หากคุณใช้ไฟล์ CSS อื่นในการจัดหน้า สามารถเปลี่ยนชื่อไฟล์ได้ครับ
 
 function Favorites() {
+    const [favorites, setFavorites] = useState([]);
+    const [loading, setLoading] = useState(true);
     const navigate = useNavigate();
 
-    // --- States สำหรับ Navbar & Data ---
-    const [username, setUsername] = useState('');
-    const [email, setEmail] = useState('');
-    const [avatar, setAvatar] = useState(null);
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [coins, setCoins] = useState(null);
-    const [megaOpen, setMegaOpen] = useState(false);
-    const [hoveredMenu, setHoveredMenu] = useState(null);
-    const [profileOpen, setProfileOpen] = useState(false);
-    const [notifOpen, setNotifOpen] = useState(false);
-    
-    // State สำหรับเก็บรายการที่ชอบ (ตัวอย่าง)
-    const [favBooks, setFavBooks] = useState([
-        /* ตัวอย่างข้อมูล: { id: 1, title: 'หนังสือเล่มที่ 1', author: 'นักเขียน A', image: 'url-image' } */
-    ]);
-
-    const profileRef = useRef(null);
-    const megaRef = useRef(null);
-    const notifRef = useRef(null);
-
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            setIsLoggedIn(true);
-            axios.get('http://localhost:3001/profile', {
-                headers: { Authorization: `Bearer ${token}` }
-            }).then(res => {
-                setUsername(res.data.username);
-                setEmail(res.data.email || '');
-                setAvatar(res.data.image || null);
-                setCoins(res.data.coins ?? 0);
-            }).catch(() => handleLogout());
-        } else {
-            navigate('/'); 
-        }
-    }, [navigate]);
-
-    // คลิกข้างนอกเพื่อปิด Dropdown
-    useEffect(() => {
-        const handleClickOutside = (e) => {
-            if (megaRef.current && !megaRef.current.contains(e.target)) setMegaOpen(false);
-            if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false);
-            if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
+        fetchFavorites();
     }, []);
 
-    const handleLogout = () => {
-        localStorage.clear();
-        navigate('/');
+    const fetchFavorites = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        try {
+            const res = await axios.get('http://localhost:3001/favorites/full', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setFavorites(res.data);
+        } catch (error) {
+            console.error("Error fetching favorites:", error);
+            
+            // 🔻 เพิ่มโค้ดดักจับ 403 ตรงนี้ 🔻
+            if (error.response && error.response.status === 403) {
+                alert("เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่อีกครั้ง");
+                localStorage.clear(); // ล้างข้อมูลเก่าทิ้ง
+                window.location.href = '/'; // เด้งกลับหน้าแรก
+            }
+        } finally {
+            setLoading(false);
+        }
     };
 
+    // ฟังก์ชันสำหรับกดยกเลิกหัวใจ (Unfavorite) จากหน้านี้
+    const handleRemoveFavorite = async (bookId) => {
+        const token = localStorage.getItem('token');
+        try {
+            // เรียก API /favorites/toggle ที่คุณสร้างไว้
+            await axios.post('http://localhost:3001/favorites/toggle', { bookId }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            // อัปเดตหน้าจอโดยกรองหนังสือเล่มที่ถูกลบออกไป
+            setFavorites(favorites.filter(book => book.id !== bookId));
+        } catch (error) {
+            console.error("Error removing favorite:", error);
+            alert("เกิดข้อผิดพลาดในการลบรายการโปรด");
+        }
+    };
+
+    if (loading) return <div style={{ textAlign: 'center', marginTop: '50px', fontSize: '18px' }}>กำลังโหลดรายการโปรด... ⏳</div>;
+
     return (
-        <div className="home-page">
-            {/* ── 1. NAVBAR (ชุดเดิมเป๊ะ) ── */}
-            <header className="navbar">
-                <div className="navbar-inner">
-                    <div className="nav-left">
-                        <div className="nav-logo" onClick={() => navigate('/')} style={{cursor:'pointer'}}>
-                            <div className="nav-logo-box"><i className="fas fa-book-open"></i></div>
-                        </div>
-                        <div className="mega-wrap" ref={megaRef}>
-                            <button className="nav-hamburger" onClick={() => setMegaOpen(!megaOpen)}>
-                                <i className="fas fa-bars"></i><span>เลือกหมวด</span>
-                            </button>
-                            {megaOpen && (
-                                <div className="mega-menu">
-                                    <div className="mega-col">
-                                        {MENU_ITEMS.map(item => (
-                                            <div key={item.label} className={`mega-item ${hoveredMenu === item.label ? 'hovered' : ''}`} onMouseEnter={() => setHoveredMenu(item.label)}>
-                                                <span>{item.label}</span>
-                                                {item.subs.length > 0 && <i className="fas fa-chevron-right"></i>}
-                                            </div>
-                                        ))}
-                                    </div>
-                                    {hoveredMenu === 'นิยาย' && (
-                                        <div className="mega-col">
-                                            {MENU_ITEMS[0].subs.map(s => <div key={s} className="mega-item"><span>{s}</span></div>)}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+        <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'Sarabun, sans-serif' }}>
+            
+            <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', marginBottom: '20px', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <i className="fas fa-arrow-left"></i> กลับหน้าหลัก
+            </button>
+            
+            <h2 style={{ borderBottom: '2px solid #ff4e63', paddingBottom: '10px', color: '#333' }}>
+                ❤️ หนังสือเล่มโปรดของคุณ
+            </h2>
 
-                    <div className="nav-center">
-                        <div className="nav-search">
-                            <input type="text" placeholder="ค้นหาหนังสือที่ชอบ..." />
-                            <button><i className="fas fa-search"></i></button>
-                        </div>
-                    </div>
-
-                    <div className="nav-right">
-                        <button className="nav-icon-btn"><i className="fas fa-shopping-cart"></i></button>
-                        <div className="profile-wrap" ref={profileRef}>
-                            <button className="nav-user-btn" onClick={() => setProfileOpen(!profileOpen)}>
-                                {avatar ? <img src={avatar} alt="avatar" style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover' }} /> : <i className="fas fa-user-circle nav-avatar" style={{fontSize: 30}}></i>}
-                                <span className="nav-username" style={{marginLeft: 8, color: 'black'}}>{username}</span>
-                            </button>
-                            {profileOpen && (
-                                <div className="profile-dropdown">
-                                    <div className="pd-header"><div className="pd-name">{username}</div></div>
-                                    <div className="pd-divider"></div>
-                                    <div className="pd-item" onClick={() => navigate('/history')}><i className="fas fa-history"></i> ประวัติซื้อ</div>
-                                    <div className="pd-item" onClick={() => navigate('/favorites')}><i className="fas fa-heart"></i> รายการที่ชอบ</div>
-                                    <div className="pd-item" onClick={() => navigate('/settingprofile')}><i className="fas fa-cog"></i> ตั้งค่าบัญชี</div>
-                                    <div className="pd-divider"></div>
-                                    <div className="pd-logout" onClick={handleLogout}><i className="fas fa-sign-out-alt"></i> ออกจากระบบ</div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
+            {favorites.length === 0 ? (
+                <div style={{ textAlign: 'center', marginTop: '80px', color: '#888' }}>
+                    <i className="fas fa-heart-broken" style={{ fontSize: '64px', marginBottom: '20px', color: '#eee' }}></i>
+                    <p style={{ fontSize: '18px' }}>ยังไม่มีหนังสือในรายการโปรดเลยครับ ไปหาอ่านกันเถอะ!</p>
+                    <button 
+                        onClick={() => navigate('/')} 
+                        style={{ padding: '12px 24px', background: '#ff4e63', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', marginTop: '15px', fontSize: '16px', fontWeight: 'bold' }}>
+                        เลือกดูหนังสือ
+                    </button>
                 </div>
-            </header>
-
-            {/* ── 2. CONTENT หน้า FAVORITES ── */}
-            <div className="setting-center-wrapper">
-                <div className="page">
-                    <div className="breadcrumb">
-                        <span>หน้าหลัก</span> / <span style={{color: '#ff4d4d'}}>รายการที่ชอบ</span>
-                    </div>
-                    
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-                        <h1 className="heading" style={{ margin: 0 }}>รายการที่ชอบ <i className="fas fa-heart" style={{color: '#ff4d4d'}}></i></h1>
-                        <span style={{ color: '#666', fontSize: '14px' }}>ทั้งหมด {favBooks.length} รายการ</span>
-                    </div>
-
-                    {favBooks.length > 0 ? (
-                        <div className="fav-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '25px' }}>
-                            {/* ตรงนี้ไว้ Map ข้อมูลหนังสือ */}
-                        </div>
-                    ) : (
-                        /* กรณีไม่มีรายการที่ชอบ */
-                        <div className="card" style={{ padding: '80px 20px', textAlign: 'center' }}>
-                            <div style={{ fontSize: '70px', color: '#ffebee', marginBottom: '20px' }}>
-                                <i className="fas fa-heart"></i>
+            ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '20px', marginTop: '30px' }}>
+                    {favorites.map(book => (
+                        <div key={book.id} style={{ background: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 4px 10px rgba(0,0,0,0.05)', position: 'relative', border: '1px solid #eee' }}>
+                            <img 
+                                src={book.image} 
+                                alt={book.title} 
+                                style={{ width: '100%', height: '260px', objectFit: 'cover', cursor: 'pointer' }} 
+                                onClick={() => navigate(`/read/${book.id}`)} 
+                            />
+                            <div style={{ padding: '15px' }}>
+                                <h4 style={{ margin: '0 0 5px 0', fontSize: '16px', color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {book.title}
+                                </h4>
+                                <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>{book.author}</p>
+                                
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '15px' }}>
+                                    <button 
+                                        onClick={() => navigate(`/read/${book.id}`)}
+                                        style={{ flex: 1, marginRight: '5px', padding: '8px', background: '#f5f5f5', color: '#333', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}>
+                                        📖 อ่านเลย
+                                    </button>
+                                    <button 
+                                        onClick={() => handleRemoveFavorite(book.id)}
+                                        style={{ padding: '8px 12px', background: '#ffe4e6', color: '#ff4e63', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
+                                        title="ลบออกจากรายการโปรด">
+                                        <i className="fas fa-trash-alt"></i>
+                                    </button>
+                                </div>
                             </div>
-                            <h2 style={{ color: '#333', fontSize: '24px' }}>ยังไม่มีรายการโปรด</h2>
-                            <p style={{ color: '#999', marginTop: '10px' }}>กดหัวใจให้กับหนังสือที่คุณถูกใจเพื่อเก็บไว้ที่นี่</p>
-                            <button 
-                                className="logout-btn" 
-                                style={{ marginTop: '30px', background: '#ff4d4d', borderColor: '#ff4d4d' }} 
-                                onClick={() => navigate('/')}
-                            >
-                                ไปสำรวจหนังสือ
-                            </button>
                         </div>
-                    )}
+                    ))}
                 </div>
-            </div>
+            )}
         </div>
     );
 }
