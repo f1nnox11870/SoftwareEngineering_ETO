@@ -167,17 +167,54 @@ app.post('/login', (req, res) => {
     });
 });
 
-// 🗑️ Delete Cart Item
-app.delete('/cart/:id', verifyToken, (req, res) => { // แก้ไข authenticateToken เป็น verifyToken แล้ว
-    const cartItemId = req.params.id;
+// 🛒 Get Cart Items (ดึงของในตะกร้ามานับจำนวน)
+app.get('/cart', verifyToken, (req, res) => {
     const userId = req.user.id;
+    // ใช้ JOIN เพื่อดึงข้อมูลจากตาราง books มาแสดงคู่กับ item ในตะกร้า
+    const sql = `
+        SELECT ci.id AS cart_item_id, b.id AS book_id, b.title, b.image, b.price, b.author
+        FROM cart_items ci
+        JOIN books b ON ci.book_id = b.id
+        WHERE ci.user_id = ?`;
+
+    db.all(sql, [userId], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        res.json(rows);
+    });
+});
+
+// ➕ Add to Cart Endpoint
+app.post('/cart/add', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    const { bookId } = req.body;
+
+    // 1. เช็คก่อนว่ามีของชิ้นนี้ในตะกร้าหรือยัง
+    const checkSql = "SELECT * FROM cart_items WHERE user_id = ? AND book_id = ?";
+    db.get(checkSql, [userId, bookId], (err, row) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        
+        if (row) {
+            // ถ้าเจอข้อมูล แปลว่าซ้ำ
+            return res.status(400).json({ message: "หนังสือเล่มนี้อยู่ในตะกร้าแล้ว" });
+        }
+
+        // 2. ถ้าไม่ซ้ำ ถึงจะทำการ INSERT
+        const insertSql = "INSERT INTO cart_items (user_id, book_id) VALUES (?, ?)";
+        db.run(insertSql, [userId, bookId], function(err) {
+            if (err) return res.status(500).json({ message: "Error adding to cart" });
+            res.status(201).json({ message: "เพิ่มลงตะกร้าเรียบร้อย" });
+        });
+    });
+});
+// 🗑️ Delete Cart Item
+app.delete('/cart/:id', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    const cartItemId = req.params.id;
 
     const sql = "DELETE FROM cart_items WHERE id = ? AND user_id = ?";
     db.run(sql, [cartItemId, userId], function(err) {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        res.json({ message: "ลบสินค้าสำเร็จ", deleted: this.changes });
+        if (err) return res.status(500).json({ message: "Error deleting item" });
+        res.json({ message: "ลบสินค้าเรียบร้อยแล้ว" });
     });
 });
 
