@@ -1,15 +1,33 @@
-/* ==========================================
-   ดึงสไตล์หลักมาจาก topup.css (Navbar & Global)
-   ========================================== */
 .cart-page {
     min-height: 100vh;
     background: #f5f5f5;
 }
 
+/* 🏠 Hero Section สำหรับ Cart (สไตล์คล้าย Topup) */
+.cart-hero {
+    background: #fff;
+    padding: 40px 20px;
+    text-align: center;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 30px;
+}
+
+.cart-hero-icon {
+    font-size: 40px;
+    color: #ff4e63;
+    margin-bottom: 10px;
+}
+
+.cart-hero-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #222;
+}
+
 /* 🛒 ส่วนแสดงผลหลักของ Cart */
 .cart-container {
     max-width: 1100px;
-    margin: 40px auto;
+    margin: 0 auto 40px auto;
     padding: 0 40px;
 }
 
@@ -23,7 +41,7 @@
     padding-bottom: 5px;
 }
 
-/* 📦 Grid การจัดวาง */
+/* 📦 Grid การจัดวาง (ซ้าย: รายการ, ขวา: สรุปยอด) */
 .cart-grid {
     display: grid;
     grid-template-columns: 1fr 320px;
@@ -41,21 +59,20 @@
 
 .cart-item {
     display: flex;
-    gap: 20px;
-    padding: 20px 0;
-    border-bottom: 1px solid #f0f0f0;
+    gap: 15px;
+    padding: 15px 0;
+    border-bottom: 1px solid #eee;
+    align-items: center;
 }
 
 .cart-item:last-child {
     border-bottom: none;
 }
 
-.cart-item-img {
-    width: 100px;
-    height: 140px;
+.cart-item img {
+    width: 80px;
+    border-radius: 4px;
     object-fit: cover;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
 .cart-item-info {
@@ -63,29 +80,36 @@
 }
 
 .cart-item-info h4 {
-    font-size: 18px;
-    color: #222;
-    margin-bottom: 8px;
+    margin: 0 0 5px 0;
+    font-size: 16px;
+    color: #333;
+}
+
+.cart-item-info p {
+    font-size: 13px;
+    color: #666;
+    margin: 0 0 5px 0;
 }
 
 .cart-item-price {
-    color: #ff4e63;
-    font-weight: 700;
-    font-size: 18px;
+    font-weight: bold;
+    color: #ff4e63 !important;
+    font-size: 16px;
 }
 
 .btn-remove-item {
-    background: #fff0f1;
+    background: none;
     border: none;
-    color: #ff4e63;
-    width: 35px;
-    height: 35px;
+    color: #aaa;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: 0.2s;
+    font-size: 16px;
 }
 
 .btn-remove-item:hover {
@@ -93,7 +117,7 @@
     color: #fff;
 }
 
-/* 💰 กล่องสรุปยอด (ดีไซน์แบบเดียวกับหน้าชำระเงิน) */
+/* 💰 กล่องสรุปยอด */
 .cart-summary {
     background: #fff;
     border-radius: 16px;
@@ -107,6 +131,8 @@
     font-size: 20px;
     margin-bottom: 20px;
     color: #333;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
 }
 
 .summary-row {
@@ -120,41 +146,43 @@
 .divider {
     border: none;
     border-top: 1px solid #eee;
-    margin: 20px 0;
+    margin: 15px 0;
 }
 
 .summary-total {
     display: flex;
     justify-content: space-between;
-    font-weight: 800;
-    font-size: 22px;
+    font-weight: bold;
+    font-size: 18px;
+    color: #333;
+}
+
+.summary-total span:last-child {
     color: #ff4e63;
 }
 
-/* 🏷️ ปุ่มชำระเงิน (ใช้ class เดียวกับ topup เพื่อให้สีเขียวเหมือนกัน) */
 .btn-checkout {
     width: 100%;
-    background: #00d28d; /* สีเขียวแบบเดียวกับ topup-btn-done */
+    margin-top: 20px;
+    padding: 12px;
+    background: #ff4e63;
     color: #fff;
     border: none;
-    padding: 14px;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 16px;
-    font-weight: 700;
-    margin-top: 25px;
+    font-weight: bold;
     cursor: pointer;
     transition: 0.2s;
 }
 
 .btn-checkout:hover {
-    background: #00b377;
-    transform: translateY(-2px);
+    background: #e63e50;
 }
 
-/* empty state */
-.cart-empty-state {
+.empty-cart {
     text-align: center;
-    padding: 60px;
+    padding: 50px 20px;
     background: #fff;
-    border-radius: 20px;
+    border-radius: 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
 }

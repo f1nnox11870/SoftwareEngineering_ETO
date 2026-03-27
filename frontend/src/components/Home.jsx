@@ -4,7 +4,7 @@ import axios from 'axios';
 import '../assets/style.css';
 import Login from './login';
 import Register from './Register';
-import { useNavigate } from 'react-router-dom';
+
 
 const TABS = ['แนะนำ', 'โปรโมชั่น', 'จัดชุด', 'นิยาย', 'การ์ตูน', 'อีบุ๊กทั่วไป', 'ข่าว/นิตยสาร', 'เร็วๆ นี้'];
 
@@ -35,7 +35,7 @@ const BANNERS = [
 ];
 
 // ── BookCard ──────────────────────────────────────────
-function BookCard({ book, isLoggedIn, onView }) {
+function BookCard({ book, isLoggedIn, onView,onAddToCart }) {
     const [fav, setFav] = useState(false);
     return (
         <div className="bcard" style={{ background: 'none', border: 'none', padding: '0' }}>
@@ -69,7 +69,7 @@ function BookCard({ book, isLoggedIn, onView }) {
                 <div className="bcard-info">
                     <div className="bcard-price-row" style={{ justifyContent: 'center', width: '100%' }}>
                         {isLoggedIn && (
-                            <button className="bcard-cart" onClick={e => e.stopPropagation()} style={{ width: '40px', height: '40px', borderRadius: '50%' }}>
+                            <button className="bcard-cart" onClick={e => { e.stopPropagation(); onAddToCart(book.id); }} style={{ width: '40px', height: '40px', borderRadius: '50%' }}>
                                 <i className="fas fa-shopping-cart"></i>
                             </button>
                         )}
@@ -147,7 +147,7 @@ function BookCard({ book, isLoggedIn, onView }) {
 }
 
 // ── BookRow ───────────────────────────────────────────
-function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView }) {
+function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView,onAddToCart }) {
     const rowRef = useRef(null);
     const scroll = (dir) => {
         if (rowRef.current) rowRef.current.scrollBy({ left: dir * 700, behavior: 'smooth' });
@@ -155,6 +155,9 @@ function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView }) {
 
     if (!books || books.length === 0) return null;
 
+    {books.map(book => (
+        <BookCard key={book.id} book={book} isLoggedIn={isLoggedIn} onView={onView} onAddToCart={onAddToCart} />
+    ))}
     return (
         <section className="brow-section">
             <div className="brow-header">
@@ -185,10 +188,45 @@ function Home() {
     // State สำหรับข้อมูลหนังสือและหน้าต่าง View
     const [books, setBooks] = useState([]);
     const [viewBook, setViewBook] = useState(null); // เก็บหนังสือที่ถูกกด View
+    const [cartCount, setCartCount] = useState(0);
 
+    const fetchCartCount = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        try {
+            const res = await axios.get('http://localhost:3001/cart', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setCartCount(res.data.length); 
+        } catch (err) {
+            console.error("Error fetching cart:", err);
+        }
+    };
+
+    const addToCart = async (bookId) => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setModal('login');
+            return;
+        }
+        try {
+            await axios.post('http://localhost:3001/cart/add', { bookId }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            alert(res.data.message); // แสดง "เพิ่มลงตะกร้าเรียบร้อย"
+            fetchCartCount();        // อัปเดตตัวเลขที่ Navbar
+            setViewBook(null);       w
+            
+            alert("เพิ่มลงตะกร้าแล้ว!");
+        } catch (err) {
+            alert("ไม่สามารถเพิ่มสินค้าได้");
+        }
+    };
+    
     const [username, setUsername]       = useState('');
     const [isLoggedIn, setIsLoggedIn]   = useState(false);
     const [role, setRole] = useState(null);
+    const [profileImage, setProfileImage] = useState(null);
 
     const [modal, setModal]             = useState(null);
     const [activeTab, setActiveTab]     = useState('แนะนำ');
@@ -222,7 +260,8 @@ function Home() {
     useEffect(() => {
         const token = localStorage.getItem('token');
         const user  = localStorage.getItem('username');
-        if (token) { setIsLoggedIn(true); if (user) setUsername(user); }
+        if (token) { setIsLoggedIn(true); if (user) setUsername(user)
+            fetchCartCount();; }
     }, []);
 
     // Fetch coins
@@ -241,6 +280,7 @@ function Home() {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setCoins(res.data.coins ?? 0);
+                setProfileImage(res.data.image || null);
             } catch {
                 setCoins(0);
             }
@@ -405,15 +445,18 @@ function Home() {
                                     <i className="fas fa-heart"></i>
                                     <span className="nbadge red">1</span>
                                 </button>
-                                <button className="nav-icon-btn pos-rel"
-                                onClick={() => navigate('/cart')}
-                                >
+                                <button className="nav-icon-btn pos-rel" onClick={() => navigate('/cart')}>
                                     <i className="fas fa-shopping-cart"></i>
-                                    <span className="nbadge red">1</span>
-                                </button>
+                                    {cartCount > 0 && <span className="nbadge red">{cartCount}</span>} 
+                            </button>
                                 <div className="profile-wrap" ref={profileRef}>
                                     <button className="nav-user-btn" onClick={() => setProfileOpen(v => !v)}>
-                                        <i className="fas fa-user-circle nav-avatar"></i>
+                                        {/* 👈 เปลี่ยนจากไอคอน <i> ธรรมดา เป็นเงื่อนไขเช็ครูป */}
+                                        {profileImage ? (
+                                            <img src={profileImage} alt="Profile" className="nav-avatar" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                                        ) : (
+                                            <i className="fas fa-user-circle nav-avatar"></i>
+                                        )}
                                         <div className="nav-user-info">
                                             <span className="nav-username">{username}</span>
                                         </div>
@@ -421,10 +464,15 @@ function Home() {
                                     {profileOpen && (
                                         <div className="profile-dropdown">
                                             <div className="pd-header">
-                                                <i className="fas fa-user-circle pd-avatar-icon"></i>
+                                                {/* 👈 เปลี่ยนจากไอคอน <i> ธรรมดา เป็นเงื่อนไขเช็ครูป */}
+                                                {profileImage ? (
+                                                    <img src={profileImage} alt="Profile" className="pd-avatar-icon" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                ) : (
+                                                    <i className="fas fa-user-circle pd-avatar-icon"></i>
+                                                )}
                                                 <div>
                                                     <div className="pd-name">{username}</div>
-                                                    <div className="pd-sub">{username}</div>
+                                                    <div className="pd-sub">ผู้ใช้งานทั่วไป</div> {/* 👈 อาจจะเปลี่ยนตรงนี้ให้แสดง role หรืออะไรที่เหมาะสมแทนการซ้ำ username ครับ */}
                                                 </div>
                                             </div>
                                             {coins !== null && (
@@ -522,8 +570,8 @@ function Home() {
             </section>
 
             {/* ══ BOOK ROWS (ส่ง onView เข้าไปด้วย) ══ */}
-            <BookRow title="มังงะ&การ์ตูน"  books={mangaBooks}  isLoggedIn={isLoggedIn} onView={setViewBook} />
-            <BookRow title="นิยาย" books={novelBooks} isLoggedIn={isLoggedIn} onView={setViewBook} />
+            <BookRow title="มังงะ&การ์ตูน" books={mangaBooks} isLoggedIn={isLoggedIn} onView={setViewBook} onAddToCart={addToCart} />
+            <BookRow title="นิยาย" books={novelBooks} isLoggedIn={isLoggedIn} onView={setViewBook} onAddToCart={addToCart} />
             
             {books.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '50px 0', color: '#888' }}>
@@ -583,7 +631,9 @@ function Home() {
 
                         <div style={{ marginTop: '25px', display: 'flex', gap: '10px' }}>
                             {isLoggedIn && (
-                                <button style={{ flex: 1, padding: '12px', background: '#ff4e63', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px', transition: '0.2s' }}>
+                                <button 
+                                    onClick={() => addToCart(viewBook.id)}
+                                    style={{ flex: 1, padding: '12px', background: '#ff4e63', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' }}>
                                     <i className="fas fa-shopping-cart"></i> เพิ่มลงตะกร้า
                                 </button>
                             )}
