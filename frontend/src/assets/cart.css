@@ -186,3 +186,38 @@
     border-radius: 16px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.05);
 }
+/* HERO & BREADCRUMB STYLE */
+.cart-hero {
+    background: #fff;
+    padding: 20px 0; /* ลด padding ลงเพราะไม่มีการโชว์เหรียญแล้ว */
+    border-bottom: 1px solid #eee;
+    margin-bottom: 20px;
+}
+
+.cart-page-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 40px;
+}
+
+.cart-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cart-breadcrumb-home {
+    cursor: pointer;
+    color: #888;
+    transition: 0.2s;
+}
+
+.cart-breadcrumb-home:hover {
+    color: #ff4e63;
+}
+
+.cart-breadcrumb-cur {
+    font-size: 13px;
+    color: #333;
+    font-weight: 500;
+}
