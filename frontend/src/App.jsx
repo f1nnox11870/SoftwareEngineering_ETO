@@ -13,6 +13,7 @@ import Admin from './components/Admin';
 import History from './components/History'
 import SettingProfile from './components/settingprofile'
 import Read from './components/Read'
+import MyShelf from './components/myshelf'
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
           <Route path="/admin" element={<Admin />} />
           <Route path="/read/:id" element={<Read />} />
           <Route path="/settingprofile" element={<SettingProfile />} />
+          <Route path="myshelf" element={<MyShelf />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/profile" element={<Profile />} />
           </Route>

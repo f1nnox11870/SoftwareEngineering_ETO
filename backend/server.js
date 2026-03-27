@@ -598,6 +598,33 @@ app.get('/library/check', verifyToken, (req, res) => {
         res.json(purchasedBookIds);
     });
 });
+//Library ดึงหนังสือ จากข้อมูลทั้งหมด
+app.get('/library', verifyToken, (req, res) => {
+    const userId = req.user.id;
+ 
+    const sql = `
+        SELECT 
+            b.id,
+            b.title,
+            b.author,
+            b.category,
+            b.description,
+            b.image,
+            b.price,
+            b.likes,
+            pb.purchased_at
+        FROM purchased_books pb
+        JOIN books b ON pb.book_id = b.id
+        WHERE pb.user_id = ?
+        ORDER BY pb.purchased_at DESC
+    `;
+ 
+    db.all(sql, [userId], (err, rows) => {
+        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+        res.json(rows);
+    });
+});
+ 
 // ================= START SERVER =================
 app.listen(port, () => {
     console.log(`🚀 Server is running on http://localhost:${port}`);

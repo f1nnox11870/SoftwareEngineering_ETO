@@ -583,7 +583,7 @@ function Home() {
                                             {/* 🔺 สิ้นสุดส่วนแสดงเหรียญ 🔺 */}
 
                                             <div className="pd-divider"></div>
-                                            <div className="pd-item"><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
+                                            <div className="pd-item" onClick={() => navigate('/myshelf')}><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
                                             <div className="pd-item" onClick={() => navigate('/history')}><i className="fas fa-history"></i> ประวัติซื้อ</div>
                                             <div className="pd-item" onClick={() => navigate('/topup')}><i className="fas fa-coins"></i> ซื้อเหรียญ</div>
                                             <div className="pd-divider"></div>
@@ -765,7 +765,7 @@ function Home() {
                                         </button>
                                     )}
                                     <button 
-                                        onClick={() => navigate(`/read/${viewBook.id}`)} 
+                                        onClick={() => navigate(`/read/${viewBook.id}`)}
                                         style={{ 
                                             flex: isLoggedIn ? 1 : 'none', 
                                             width: isLoggedIn ? 'auto' : '100%', 
