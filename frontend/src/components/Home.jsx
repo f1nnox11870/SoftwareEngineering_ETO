@@ -404,7 +404,9 @@ function Home() {
                                     <i className="fas fa-heart"></i>
                                     <span className="nbadge red">1</span>
                                 </button>
-                                <button className="nav-icon-btn pos-rel">
+                                <button className="nav-icon-btn pos-rel"
+                                onClick={() => navigate('/cart')}
+                                >
                                     <i className="fas fa-shopping-cart"></i>
                                     <span className="nbadge red">1</span>
                                 </button>
