@@ -43,6 +43,22 @@ db.run(`CREATE TABLE IF NOT EXISTS episodes (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (book_id) REFERENCES books(id)
 )`);
+// 🛒 cart_items table
+db.run(`CREATE TABLE IF NOT EXISTS cart_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    book_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (book_id) REFERENCES books(id)
+)`, (err) => {
+    if (err) {
+        console.error("Error creating cart_items table:", err.message);
+    } else {
+        console.log("cart_items table ready.");
+    }
+});
+// admin
 db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
@@ -264,5 +280,43 @@ app.get('/books', (req, res) => {
             return res.status(500).json({ message: 'Database error' });
         }
         res.json(rows); // ส่งข้อมูลหนังสือทั้งหมดกลับไปให้ Front-end
+    });
+});
+// --- API ดึงข้อมูลตะกร้า ---
+app.get('/cart', verifyToken, (req, res) => {
+    const userId = req.user.id; 
+    const sql = `
+        SELECT 
+            cart_items.id AS cart_item_id, 
+            books.id AS book_id, 
+            books.title, 
+            books.price, 
+            books.image 
+        FROM cart_items 
+        JOIN books ON cart_items.book_id = books.id 
+        WHERE cart_items.user_id = ?
+    `;
+    
+    db.all(sql, [userId], (err, rows) => {
+        if (err) {
+            console.error("Cart Error:", err.message);
+            return res.status(500).json({ error: "ดึงข้อมูลล้มเหลว" });
+        }
+        console.log("Data sent to frontend:", rows); // เพิ่มบรรทัดนี้เพื่อเช็คที่หน้าจอ Terminal ของ Node.js
+        res.json(rows); 
+    });
+});
+// --- API เพิ่มลงตะกร้า ---
+app.post('/cart', verifyToken, (req, res) => {
+    const userId = req.user?.id; 
+    const { bookId } = req.body; 
+    const sql = "INSERT INTO cart_items (user_id, book_id) VALUES (?, ?)";
+    
+    db.run(sql, [userId, bookId], function(err) {
+        if (err) {
+            console.error(err.message);
+            return res.status(500).json({ error: "เกิดข้อผิดพลาดที่ฐานข้อมูล" });
+        }
+        res.status(200).json({ message: "เพิ่มลงตะกร้าสำเร็จ!", id: this.lastID });
     });
 });
