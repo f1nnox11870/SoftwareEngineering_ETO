@@ -4,6 +4,7 @@ import axios from 'axios';
 import '../assets/style.css';
 import Login from './login';
 import Register from './Register';
+import { useNavigate } from 'react-router-dom';
 
 const TABS = ['แนะนำ', 'โปรโมชั่น', 'จัดชุด', 'นิยาย', 'การ์ตูน', 'อีบุ๊กทั่วไป', 'ข่าว/นิตยสาร', 'เร็วๆ นี้'];
 

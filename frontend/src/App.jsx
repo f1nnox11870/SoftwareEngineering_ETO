@@ -6,11 +6,10 @@ import Login from './components/login'
 import Register from './components/Register'
 import Profile from './components/Profile'
 import Topup from './components/Topup'
-import Cart from './components/Cart'
+import Cart from './components/cart'
 import ProtectedRoute from './ProtectedRoute'
 import Favorites from './components/Favorites';
 import Admin from './components/Admin';
-import cart from './components/Cart';
 function App() {
   return (
     <Router>
