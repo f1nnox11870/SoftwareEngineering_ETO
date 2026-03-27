@@ -135,6 +135,37 @@ function Cart() {
         navigate('/');
     };
 
+    const handleCheckout = async () => {
+    const token = localStorage.getItem('token');
+    
+    // ตรวจสอบเบื้องต้น
+    if (coins < totalPrice) {
+        alert(`เหรียญไม่พอ! คุณมี ${coins} แต่ต้องใช้ ${totalPrice} 🪙\nกรุณาไปเติมเหรียญก่อนครับ`);
+        navigate('/topup');
+        return;
+    }
+
+    if (!window.confirm(`ยืนยันการชำระเงินจำนวน ${totalPrice.toLocaleString()} 🪙 ใช่หรือไม่?`)) return;
+
+    try {
+        const res = await axios.post('http://localhost:3001/cart/checkout', {}, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        alert(res.data.message);
+        
+        // อัปเดต State ในหน้าเว็บ
+        setCoins(res.data.remainingCoins);
+        setCartItems([]);
+        setCartCount(0);
+        
+        // ส่งไปหน้าชั้นหนังสือ หรือ หน้าประวัติ
+        //navigate('/history'); 
+    } catch (err) {
+        const errorMsg = err.response?.data?.message || "เกิดข้อผิดพลาดในการชำระเงิน";
+        alert(errorMsg);
+    }
+};
     const totalPrice = cartItems.reduce((sum, item) => sum + (item.price || 0), 0);
 
     return (
@@ -359,19 +390,33 @@ function Cart() {
                             <h3>สรุปยอดชำระ</h3>
                             <div className="summary-row">
                                 <span>ราคาสินค้า</span>
-                                <span>{totalPrice.toLocaleString()} บาท</span>
+                                <span>{totalPrice.toLocaleString()} 🪙</span>
                             </div>
-                            <div className="summary-row">
-                                <span>ส่วนลด</span>
-                                <span style={{ color: '#2ecc71' }}>- 0 บาท</span>
+                            
+                            {/* เพิ่มส่วนเช็คเหรียญของผู้ใช้ */}
+                            <div className="summary-coins-check" style={{ marginTop: '10px', padding: '10px', background: '#fff8f8', borderRadius: '8px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                                    <span>เหรียญของคุณ:</span>
+                                    <span style={{ fontWeight: 'bold' }}>{coins?.toLocaleString()} 🪙</span>
+                                </div>
+                                {coins < totalPrice && (
+                                    <p style={{ color: 'red', fontSize: '12px', marginTop: '5px' }}>* เหรียญไม่พอ กรุณาเติมเหรียญ</p>
+                                )}
                             </div>
+
                             <hr className="divider" />
                             <div className="summary-total">
                                 <span>ยอดสุทธิ</span>
-                                <span>{totalPrice.toLocaleString()} บาท</span>
+                                <span>{totalPrice.toLocaleString()} 🪙</span>
                             </div>
-                            <button className="btn-checkout">
-                                ชำระเงิน
+
+                            <button 
+                                className="btn-checkout" 
+                                onClick={handleCheckout}
+                                disabled={coins < totalPrice} 
+                                style={{ opacity: coins < totalPrice ? 0.6 : 1 }}
+                            >
+                                ชำระเงินด้วยเหรียญ
                             </button>
                         </div>
                     </div>

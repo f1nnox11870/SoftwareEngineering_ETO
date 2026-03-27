@@ -94,7 +94,7 @@ db.run(`CREATE TABLE IF NOT EXISTS cart_items (
 });
 
 // ❤️ favorites table
-db.run(CREATE TABLE IF NOT EXISTS favorites (
+db.run(`CREATE TABLE IF NOT EXISTS favorites (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
     book_id INTEGER,
@@ -102,12 +102,24 @@ db.run(CREATE TABLE IF NOT EXISTS favorites (
     UNIQUE(user_id, book_id),
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (book_id) REFERENCES books(id)
-), (err) => {
+)`, (err) => {
     if (err) {
         console.error("Error creating favorites table:", err.message);
     } else {
         console.log("✅ favorites table ready.");
     }
+});
+
+// 📚 purchased_books table (เก็บประวัติการเป็นเจ้าของหนังสือ)
+db.run(`CREATE TABLE IF NOT EXISTS purchased_books (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    book_id INTEGER,
+    purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, book_id) 
+)`, (err) => {
+    if (err) console.error("Error creating purchased_books table:", err);
+    else console.log("✅ Table 'purchased_books' is ready.");
 });
 
 // สร้าง admin
@@ -522,7 +534,72 @@ app.get('/favorites/full', verifyToken, (req, res) => {
     });
 });
 
+
+// 💳 ระบบชำระเงินในตะกร้าด้วยเหรียญ
+app.post('/cart/checkout', verifyToken, (req, res) => {
+    const userId = req.user.id;
+
+    const cartSql = `
+        SELECT ci.book_id, b.price, b.title 
+        FROM cart_items ci 
+        JOIN books b ON ci.book_id = b.id 
+        WHERE ci.user_id = ?`;
+
+    db.all(cartSql, [userId], (err, items) => {
+        if (err) return res.status(500).json({ message: "Database error (fetch cart)" });
+        if (items.length === 0) return res.status(400).json({ message: "ไม่มีสินค้าในตะกร้า" });
+
+        const totalCost = items.reduce((sum, item) => sum + (item.price || 0), 0);
+
+        db.get(`SELECT coins FROM users WHERE id = ?`, [userId], (err, user) => {
+            if (err || !user) return res.status(500).json({ message: "Error fetching user" });
+            
+            if (user.coins < totalCost) {
+                return res.status(400).json({ message: "เหรียญไม่เพียงพอ" });
+            }
+
+            // 1️⃣ หักเหรียญ
+            db.run(`UPDATE users SET coins = coins - ? WHERE id = ?`, [totalCost, userId], function(err) {
+                if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการหักเหรียญ" });
+
+                // 2️⃣ บันทึกหนังสือที่ซื้อลง purchased_books (ชั้นหนังสือของผู้ใช้)
+                const placeholders = items.map(() => "(?, ?)").join(",");
+                const values = [];
+                items.forEach(item => values.push(userId, item.book_id));
+
+                // ใช้ INSERT OR IGNORE เผื่อป้องกันข้อผิดพลาดกรณีมีข้อมูลซ้ำ
+                db.run(`INSERT OR IGNORE INTO purchased_books (user_id, book_id) VALUES ${placeholders}`, values, function(err) {
+                    if (err) console.error("Error inserting to library:", err);
+
+                    // 3️⃣ ลบสินค้าออกจากตะกร้าเมื่อเสร็จสิ้น
+                    db.run(`DELETE FROM cart_items WHERE user_id = ?`, [userId], (err) => {
+                        if (err) console.error("Clear cart error:", err);
+                        
+                        res.json({ 
+                            message: "ชำระเงินสำเร็จ! หนังสือถูกเพิ่มเข้าชั้นหนังสือของคุณแล้ว", 
+                            remainingCoins: user.coins - totalCost 
+                        });
+                    });
+                });
+            });
+        });
+    });
+});
+
+// 📖 API สำหรับเช็คว่าผู้ใช้เป็นเจ้าของหนังสือเล่มไหนบ้าง (ส่งกลับไปแค่ book_id)
+app.get('/library/check', verifyToken, (req, res) => {
+    const userId = req.user.id;
+
+    db.all(`SELECT book_id FROM purchased_books WHERE user_id = ?`, [userId], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        
+        // ส่งกลับไปเป็น Array ของ book_id เช่น [1, 3, 5] เพื่อง่ายต่อการเช็คใน Frontend
+        const purchasedBookIds = rows.map(row => row.book_id);
+        res.json(purchasedBookIds);
+    });
+});
 // ================= START SERVER =================
 app.listen(port, () => {
     console.log(`🚀 Server is running on http://localhost:${port}`);
 });
+
