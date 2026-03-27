@@ -215,11 +215,12 @@ function Home() {
             });
             alert(res.data.message); // แสดง "เพิ่มลงตะกร้าเรียบร้อย"
             fetchCartCount();        // อัปเดตตัวเลขที่ Navbar
-            setViewBook(null);       w
+            setViewBook(null);       
             
             alert("เพิ่มลงตะกร้าแล้ว!");
         } catch (err) {
             alert("ไม่สามารถเพิ่มสินค้าได้");
+            setViewBook(null);    
         }
     };
     
