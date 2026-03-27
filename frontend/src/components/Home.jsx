@@ -35,9 +35,11 @@ const BANNERS = [
 ];
 
 // ── BookCard ──────────────────────────────────────────
-function BookCard({ book, isLoggedIn, onView, onAddToCart }) {
-    const [fav, setFav] = useState(false);
-
+function BookCard({ book, isLoggedIn, onView, onAddToCart , isFavorite}) {
+    const [fav, setFav] = useState(isFavorite || false);
+    useEffect(() => {
+        setFav(isFavorite);
+    }, [isFavorite])
     // 🔻 1. เพิ่มฟังก์ชันนี้เพื่อยิง API ไปบันทึก/ลบ รายการโปรด 🔻
     const handleToggleFavorite = async (e) => {
         e.stopPropagation(); // ป้องกันไม่ให้เผลอไปกดเปิดดูรายละเอียดหนังสือ
@@ -152,7 +154,8 @@ function BookCard({ book, isLoggedIn, onView, onAddToCart }) {
 }
 
 // ── BookRow ───────────────────────────────────────────
-function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView,onAddToCart }) {
+// 🔻 1. เพิ่ม favoriteIds เข้าไปในวงเล็บ 🔻
+function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView, onAddToCart, favoriteIds = [] }) {
     const rowRef = useRef(null);
     const scroll = (dir) => {
         if (rowRef.current) rowRef.current.scrollBy({ left: dir * 700, behavior: 'smooth' });
@@ -160,9 +163,6 @@ function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView,onAddToCa
 
     if (!books || books.length === 0) return null;
 
-    {books.map(book => (
-        <BookCard key={book.id} book={book} isLoggedIn={isLoggedIn} onView={onView} onAddToCart={onAddToCart} />
-    ))}
     return (
         <section className="brow-section">
             <div className="brow-header">
@@ -175,7 +175,14 @@ function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView,onAddToCa
                 </button>
                 <div className="brow-track" ref={rowRef}>
                     {books.map(book => (
-                        <BookCard key={book.id} book={book} isLoggedIn={isLoggedIn} onView={onView} />
+                        <BookCard 
+                            key={book.id} 
+                            book={book} 
+                            isLoggedIn={isLoggedIn} 
+                            onView={onView} 
+                            onAddToCart={onAddToCart}
+                            isFavorite={favoriteIds.includes(book.id)} /* 👈 ใช้ favoriteIds ตรงนี้ได้แล้ว! */
+                        />
                     ))}
                 </div>
                 <button className="brow-arrow right" onClick={() => scroll(1)}>
@@ -194,7 +201,28 @@ function Home() {
     const [books, setBooks] = useState([]);
     const [viewBook, setViewBook] = useState(null); // เก็บหนังสือที่ถูกกด View
     const [cartCount, setCartCount] = useState(0);
-
+    const [favoriteIds, setFavoriteIds] = useState([]);
+    const fetchFavoriteIds = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        try {
+            const res = await axios.get('http://localhost:3001/favorites', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            // ข้อมูลจะมาในรูปแบบ [{book_id: 1}, {book_id: 3}] เราจะแปลงให้เป็น [1, 3] เพื่อง่ายต่อการเช็ค
+            const ids = res.data.map(item => item.book_id);
+            setFavoriteIds(ids);
+        } catch (error) {
+            console.error("Error fetching favorites:", error);
+        }
+    };
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            fetchFavoriteIds(); // ให้มันดึงข้อมูลหัวใจตอนโหลดหน้าเว็บ
+        }
+    }, []);
     const fetchCartCount = async () => {
         const token = localStorage.getItem('token');
         if (!token) return;
@@ -623,8 +651,23 @@ function Home() {
             </section>
 
             {/* ══ BOOK ROWS (ส่ง onView เข้าไปด้วย) ══ */}
-            <BookRow title="มังงะ&การ์ตูน" books={mangaBooks} isLoggedIn={isLoggedIn} onView={setViewBook} onAddToCart={addToCart} />
-            <BookRow title="นิยาย" books={novelBooks} isLoggedIn={isLoggedIn} onView={setViewBook} onAddToCart={addToCart} />
+            <BookRow 
+                title="มังงะ&การ์ตูน"  
+                books={mangaBooks}  
+                isLoggedIn={isLoggedIn} 
+                onView={setViewBook} 
+                onAddToCart={addToCart}
+                favoriteIds={favoriteIds} /* 👈 เพิ่มบรรทัดนี้ */
+            />
+            
+            <BookRow 
+                title="นิยาย" 
+                books={novelBooks} 
+                isLoggedIn={isLoggedIn} 
+                onView={setViewBook} 
+                onAddToCart={addToCart}
+                favoriteIds={favoriteIds} /* 👈 เพิ่มบรรทัดนี้ */
+            />
             
             {books.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '50px 0', color: '#888' }}>
