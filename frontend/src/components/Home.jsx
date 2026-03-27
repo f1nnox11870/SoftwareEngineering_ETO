@@ -188,6 +188,7 @@ function Home() {
     const [username, setUsername]       = useState('');
     const [isLoggedIn, setIsLoggedIn]   = useState(false);
     const [role, setRole] = useState(null);
+    const [profileImage, setProfileImage] = useState(null);
 
     const [modal, setModal]             = useState(null);
     const [activeTab, setActiveTab]     = useState('แนะนำ');
@@ -240,6 +241,7 @@ function Home() {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setCoins(res.data.coins ?? 0);
+                setProfileImage(res.data.image || null);
             } catch {
                 setCoins(0);
             }
@@ -412,7 +414,12 @@ function Home() {
                                 </button>
                                 <div className="profile-wrap" ref={profileRef}>
                                     <button className="nav-user-btn" onClick={() => setProfileOpen(v => !v)}>
-                                        <i className="fas fa-user-circle nav-avatar"></i>
+                                        {/* 👈 เปลี่ยนจากไอคอน <i> ธรรมดา เป็นเงื่อนไขเช็ครูป */}
+                                        {profileImage ? (
+                                            <img src={profileImage} alt="Profile" className="nav-avatar" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                                        ) : (
+                                            <i className="fas fa-user-circle nav-avatar"></i>
+                                        )}
                                         <div className="nav-user-info">
                                             <span className="nav-username">{username}</span>
                                         </div>
@@ -420,10 +427,15 @@ function Home() {
                                     {profileOpen && (
                                         <div className="profile-dropdown">
                                             <div className="pd-header">
-                                                <i className="fas fa-user-circle pd-avatar-icon"></i>
+                                                {/* 👈 เปลี่ยนจากไอคอน <i> ธรรมดา เป็นเงื่อนไขเช็ครูป */}
+                                                {profileImage ? (
+                                                    <img src={profileImage} alt="Profile" className="pd-avatar-icon" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                ) : (
+                                                    <i className="fas fa-user-circle pd-avatar-icon"></i>
+                                                )}
                                                 <div>
                                                     <div className="pd-name">{username}</div>
-                                                    <div className="pd-sub">{username}</div>
+                                                    <div className="pd-sub">ผู้ใช้งานทั่วไป</div> {/* 👈 อาจจะเปลี่ยนตรงนี้ให้แสดง role หรืออะไรที่เหมาะสมแทนการซ้ำ username ครับ */}
                                                 </div>
                                             </div>
                                             {coins !== null && (
