@@ -46,7 +46,15 @@ db.run(`CREATE TABLE IF NOT EXISTS episodes (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (book_id) REFERENCES books(id)
 )`);
-
+// 🔓 unlocked_episodes table (เก็บข้อมูลว่า User คนไหนปลดล็อกตอนไหนไปแล้ว)
+db.run(`CREATE TABLE IF NOT EXISTS unlocked_episodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    book_id INTEGER,
+    episode_id INTEGER,
+    unlocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, episode_id) -- ป้องกันการซื้อตอนเดิมซ้ำ
+)`);
 // 👤 users table
 db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,12 +62,16 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE,
     password TEXT,
     role TEXT DEFAULT 'user',
-    image TEXT
+    image TEXT,
+    coins INTEGER DEFAULT 0
     
 )`, async (err) => {
     if (err) {
         console.error(err.message);
     } else {
+        db.run(`ALTER TABLE users ADD COLUMN coins INTEGER DEFAULT 0`, (err) => {
+            if (!err) console.log("✅ Added 'coins' column to existing users table.");
+        });
         console.log('✅ Users table ready');
         await createAdmin();
     }
@@ -87,13 +99,26 @@ const createAdmin = async () => {
     const password = '11111111';
     const email = 'admin@example.com';
     const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // 💰 กำหนดจำนวนเหรียญให้แอดมินตรงนี้ (เช่น 999,999 เหรียญ)
+    const adminCoins = 999999; 
 
+    // 1. ลองสร้างบัญชีแอดมิน (กรณีรันครั้งแรก)
     db.run(
-        `INSERT OR IGNORE INTO users (username, email, password, role) VALUES (?, ?, ?, ?)`,
-        [username, email, hashedPassword, 'admin'],
+        `INSERT OR IGNORE INTO users (username, email, password, role, coins) VALUES (?, ?, ?, ?, ?)`,
+        [username, email, hashedPassword, 'admin', adminCoins],
         function (err) {
-            if (err) console.error(err.message);
-            else console.log('✅ Admin ready');
+            if (err) {
+                console.error(err.message);
+            } else {
+                console.log('✅ Admin ready');
+                
+                // 2. อัปเดตเหรียญซ้ำอีกรอบ (กรณีแอดมินมีบัญชีอยู่แล้วในฐานข้อมูล จะได้เหรียญอัปเดตตามด้วย)
+                db.run(`UPDATE users SET coins = ? WHERE username = ?`, [adminCoins, username], (updateErr) => {
+                    if (updateErr) console.error("Error updating admin coins:", updateErr.message);
+                    else console.log(`🪙 Admin coins updated to ${adminCoins}`);
+                });
+            }
         }
     );
 };
@@ -166,7 +191,33 @@ app.post('/login', (req, res) => {
         res.json({ message: 'Login successful', token, username: user.username });
     });
 });
+//กดซื้อตอน (หักเหรียญ + บันทึกลง Database)
+app.post('/unlock', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    const { bookId, episodeId, coinCost } = req.body; // รับค่ามาจากหน้าเว็บ
 
+    // 2.1 เช็คก่อนว่าเหรียญพอไหม
+    db.get(`SELECT coins FROM users WHERE id = ?`, [userId], (err, user) => {
+        if (err || !user) return res.status(500).json({ message: "Error fetching user" });
+        
+        if (user.coins < coinCost) {
+            return res.status(400).json({ message: "เหรียญไม่พอ กรุณาเติมเหรียญก่อนครับ 🪙" });
+        }
+
+        // 2.2 ถ้าเหรียญพอ ให้หักเหรียญ
+        db.run(`UPDATE users SET coins = coins - ? WHERE id = ?`, [coinCost, userId], function(err) {
+            if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการหักเหรียญ" });
+
+            // 2.3 บันทึกประวัติว่าซื้อตอนนี้แล้ว
+            db.run(`INSERT OR IGNORE INTO unlocked_episodes (user_id, book_id, episode_id) VALUES (?, ?, ?)`, 
+            [userId, bookId, episodeId], function(err) {
+                if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการบันทึกตอน" });
+                
+                res.json({ message: "ปลดล็อกสำเร็จ!", remainingCoins: user.coins - coinCost });
+            });
+        });
+    });
+});
 // 🛒 Get Cart Items (ดึงของในตะกร้ามานับจำนวน)
 app.get('/cart', verifyToken, (req, res) => {
     const userId = req.user.id;
@@ -240,21 +291,62 @@ app.post('/admin/add-book', verifyToken, (req, res) => {
         });
     });
 });
+// ================= จัดการเนื้อหาย่อย (Episodes) =================
+
+// 📖 1. ดึงตอนทั้งหมดของหนังสือเล่มที่เลือก
+app.get('/books/:id/episodes', (req, res) => {
+    const sql = `SELECT * FROM episodes WHERE book_id = ? ORDER BY episode_number ASC`;
+    db.all(sql, [req.params.id], (err, rows) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        res.json(rows);
+    });
+});
+
+// ➕ 2. เพิ่มตอนใหม่ (Admin Only)
+app.post('/admin/add-episode', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden: Admin only" });
+    }
+
+    const { book_id, episode_number, title, content } = req.body;
+    if (!book_id || !title || !content) {
+        return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+    }
+
+    const sql = `INSERT INTO episodes (book_id, episode_number, title, content) VALUES (?, ?, ?, ?)`;
+    db.run(sql, [book_id, episode_number || 1, title, content], function(err) {
+        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+        res.status(201).json({ message: 'เพิ่มตอนสำเร็จ', episodeId: this.lastID });
+    });
+});
+
+// 🗑️ 3. ลบตอน (Admin Only)
+app.delete('/admin/delete-episode/:id', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden: Admin only" });
+    }
+
+    const sql = `DELETE FROM episodes WHERE id = ?`;
+    db.run(sql, [req.params.id], function(err) {
+        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+        res.json({ message: 'ลบตอนสำเร็จ' });
+    });
+});
 
 // 👤 Get Profile
 app.get('/profile', verifyToken, (req, res) => {
     const userId = req.user.id;
-    const sql = "SELECT id, username, email, image FROM users WHERE id = ?";
+    const sql = "SELECT id, username, email, role, image, coins FROM users WHERE id = ?";
 
     db.get(sql, [userId], (err, user) => {
         if (err) return res.status(500).json({ message: "Database error" });
         if (!user) return res.status(404).json({ message: "User not found" });
-
         res.json({
             id: user.id,
             username: user.username,
             email: user.email,
-            image: user.image || null
+            image: user.image || null,
+            coins: user.coins || 0
         });
     });
 });
@@ -307,7 +399,17 @@ app.get('/books', (req, res) => {
         res.json(rows); 
     });
 });
-
+//ดึงข้อมูลว่า User คนนี้ ปลดล็อกตอนไหนในหนังสือเล่มนี้ไปแล้วบ้าง
+app.get('/unlocked/:bookId', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    const bookId = req.params.bookId;
+    
+    db.all(`SELECT episode_id FROM unlocked_episodes WHERE user_id = ? AND book_id = ?`, [userId, bookId], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        // ส่งกลับไปเป็น Array ของ ID ตอนที่ปลดล็อกแล้ว เช่น [12, 13, 15]
+        res.json(rows.map(row => row.episode_id)); 
+    });
+});
 // ================= START SERVER =================
 app.listen(port, () => {
     console.log(`🚀 Server is running on http://localhost:${port}`);

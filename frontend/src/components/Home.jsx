@@ -310,6 +310,7 @@ function Home() {
         if (isLoggedIn) {
             fetchCoins();
             coinInterval.current = setInterval(fetchCoins, 30000);
+            return () => clearInterval(coinInterval.current);
         } else {
             setCoins(null);
             clearInterval(coinInterval.current);
@@ -485,7 +486,6 @@ function Home() {
                                     {profileOpen && (
                                         <div className="profile-dropdown">
                                             <div className="pd-header">
-                                                {/* 👈 เปลี่ยนจากไอคอน <i> ธรรมดา เป็นเงื่อนไขเช็ครูป */}
                                                 {profileImage ? (
                                                     <img src={profileImage} alt="Profile" className="pd-avatar-icon" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
                                                 ) : (
@@ -493,23 +493,27 @@ function Home() {
                                                 )}
                                                 <div>
                                                     <div className="pd-name">{username}</div>
-                                                    <div className="pd-sub">ผู้ใช้งานทั่วไป</div> {/* 👈 อาจจะเปลี่ยนตรงนี้ให้แสดง role หรืออะไรที่เหมาะสมแทนการซ้ำ username ครับ */}
                                                 </div>
                                             </div>
+                                            
+                                            {/* 🔻 ส่วนที่เพิ่มเข้ามา: แสดงเหรียญ 🔻 */}
                                             {coins !== null && (
                                                 <>
                                                     <div className="pd-divider"></div>
-                                                    <div className="pd-coins-row">
-                                                        <div className="pd-coins-label">
-                                                            <i className="fas fa-coins pd-coins-icon"></i>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', alignItems: 'center' }}>
+                                                        <div style={{ color: '#555', fontWeight: 'bold' }}>
+                                                            <i className="fas fa-coins" style={{ color: '#f1c40f', marginRight: '8px' }}></i>
                                                             <span>เหรียญของฉัน</span>
                                                         </div>
-                                                        <span className="pd-coins-value">{coins.toLocaleString()}</span>
+                                                        <span style={{ color: '#ff4e63', fontWeight: 'bold', fontSize: '16px' }}>
+                                                            {coins.toLocaleString()} 🪙
+                                                        </span>
                                                     </div>
                                                 </>
                                             )}
+                                            {/* 🔺 สิ้นสุดส่วนแสดงเหรียญ 🔺 */}
+
                                             <div className="pd-divider"></div>
-                                            <div className="pd-group-title">การใช้งาน</div>
                                             <div className="pd-item"><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
                                             <div className="pd-item" onClick={() => navigate('/history')}><i className="fas fa-history"></i> ประวัติซื้อ</div>
                                             <div className="pd-item" onClick={() => navigate('/topup')}><i className="fas fa-coins"></i> ซื้อเหรียญ</div>
@@ -658,8 +662,10 @@ function Home() {
                                     <i className="fas fa-shopping-cart"></i> เพิ่มลงตะกร้า
                                 </button>
                             )}
-                            <button onClick={() => setViewBook(null)} style={{ flex: isLoggedIn ? 1 : 'none', width: isLoggedIn ? 'auto' : '100%', padding: '12px', background: '#f5f5f5', color: '#333', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' }}>
-                                ปิดหน้าต่าง
+                            <button 
+                                onClick={() => navigate(`/read/${viewBook.id}`)} 
+                                style={{ flex: isLoggedIn ? 1 : 'none', width: isLoggedIn ? 'auto' : '100%', padding: '12px', background: '#f5f5f5', color: '#333', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' }}>
+                                📖 อ่านเลย
                             </button>
                         </div>
                     </div>
