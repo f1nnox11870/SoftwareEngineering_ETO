@@ -202,6 +202,7 @@ function Home() {
     const [viewBook, setViewBook] = useState(null); // เก็บหนังสือที่ถูกกด View
     const [cartCount, setCartCount] = useState(0);
     const [favoriteIds, setFavoriteIds] = useState([]);
+    const [purchasedBooks, setPurchasedBooks] = useState([]);
     const fetchFavoriteIds = async () => {
         const token = localStorage.getItem('token');
         if (!token) return;
@@ -218,11 +219,22 @@ function Home() {
         }
     };
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            fetchFavoriteIds(); // ให้มันดึงข้อมูลหัวใจตอนโหลดหน้าเว็บ
-        }
-    }, []);
+    const token = localStorage.getItem('token');
+    if (token) {
+        // 1. ดึงข้อมูลรายการโปรด (หัวใจ)
+        fetchFavoriteIds(); 
+        
+        // 2. ดึงข้อมูล "หนังสือที่ซื้อเป็นเจ้าของแล้ว" (คนละส่วนกัน)
+        axios.get('http://localhost:3001/library/check', {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+        .then(res => {
+            // เอา ID หนังสือที่ซื้อแล้วทั้งหมด มาเก็บไว้ใน State
+            if (Array.isArray(res.data)) setPurchasedBooks(res.data);
+        })
+        .catch(err => console.log("Error fetching library:", err));
+    }
+}, []);
     const fetchCartCount = async () => {
         const token = localStorage.getItem('token');
         if (!token) return;
@@ -411,6 +423,10 @@ function Home() {
     const mangaBooks = books.filter(b => b.category === 'มังงะ' || b.category === 'การ์ตูน');
     const novelBooks = books.filter(b => b.category === 'นิยาย' || b.category?.includes('นิยาย'));
 
+    // ตรวจสอบว่าซื้อหนังสือเล่มที่กำลังดูอยู่ (viewBook) หรือยัง
+    const isOwned = isLoggedIn && Array.isArray(purchasedBooks) && viewBook 
+    ? purchasedBooks.some(id => Number(id) === Number(viewBook.id))
+    : false;
     return (
         <div className="home-page">
 
@@ -723,18 +739,45 @@ function Home() {
                         </div>
 
                         <div style={{ marginTop: '25px', display: 'flex', gap: '10px' }}>
-                            {isLoggedIn && (
+                            {isOwned ? (
                                 <button 
-                                    onClick={() => addToCart(viewBook.id)}
-                                    style={{ flex: 1, padding: '12px', background: '#ff4e63', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' }}>
-                                    <i className="fas fa-shopping-cart"></i> เพิ่มลงตะกร้า
+                                    onClick={() => navigate(`/read/${viewBook.id}`)} 
+                                    style={{ 
+                                        width: '100%', padding: '12px', 
+                                        background: '#2ecc71', color: '#fff', 
+                                        border: 'none', borderRadius: '6px', 
+                                        cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' 
+                                    }}>
+                                    📖 อ่านเลย
                                 </button>
+                            ) : (
+                                <>
+                                    {isLoggedIn && (
+                                        <button 
+                                            onClick={() => addToCart(viewBook.id)}
+                                            style={{ 
+                                                flex: 1, padding: '12px', 
+                                                background: '#ff4e63', color: '#fff', 
+                                                border: 'none', borderRadius: '6px', 
+                                                cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' 
+                                            }}>
+                                            <i className="fas fa-shopping-cart"></i> เพิ่มลงตะกร้า
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={() => navigate(`/read/${viewBook.id}`)} 
+                                        style={{ 
+                                            flex: isLoggedIn ? 1 : 'none', 
+                                            width: isLoggedIn ? 'auto' : '100%', 
+                                            padding: '12px', background: '#f5f5f5', 
+                                            color: '#333', border: '1px solid #ddd', 
+                                            borderRadius: '6px', cursor: 'pointer', 
+                                            fontWeight: 'bold', fontSize: '15px' 
+                                        }}>
+                                        📖 ทดลองอ่าน
+                                    </button>
+                                </>
                             )}
-                            <button 
-                                onClick={() => navigate(`/read/${viewBook.id}`)} 
-                                style={{ flex: isLoggedIn ? 1 : 'none', width: isLoggedIn ? 'auto' : '100%', padding: '12px', background: '#f5f5f5', color: '#333', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' }}>
-                                📖 อ่านเลย
-                            </button>
                         </div>
                     </div>
                 </div>
