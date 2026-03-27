@@ -204,25 +204,45 @@ function Home() {
     };
 
     const addToCart = async (bookId) => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            setModal('login');
-            return;
+    const token = localStorage.getItem('token');
+    if (!token) {
+        alert("กรุณาเข้าสู่ระบบก่อนครับ");
+        return;
+    }
+
+    try {
+        await axios.post('http://localhost:3001/cart/add', 
+            { book_id: bookId }, 
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        //นับเรียลไทม์ cart
+        setCartCount(prev => prev + 1); 
+        
+        setViewBook(null); // ปิดหน้าต่าง
+        alert("เพิ่มลงตะกร้าเรียบร้อยแล้ว!");
+
+    } catch (err) {
+        // ให้มัน log ออกมาใน Console ด้วย จะได้ตามสืบง่าย
+        console.error("Cart Add Error:", err); 
+
+        if (err.response) {
+            // ถ้าระบบตอบกลับมา
+            if (err.response.status === 400) {
+                alert("หนังสือเล่มนี้อยู่ในตะกร้าแล้วครับ");
+            } else if (err.response.status === 401 || err.response.status === 403) {
+                alert("เซสชันหมดอายุ กรุณาล็อกอินใหม่อีกครั้งครับ");
+                localStorage.clear(); // ล้างข้อมูลที่หมดอายุ
+                window.location.reload(); // รีเฟรชหน้าต่างเพื่อให้ไปล็อกอินใหม่
+            } else {
+                alert(`Backend ฟ้องว่า: ${err.response.data.message || 'Error ' + err.response.status}`);
+            }
+        } else {
+            // ถ้าเซิร์ฟเวอร์ไม่ตอบสนองเลย (เช่น ลืมรัน node)
+            alert("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ (อย่าลืมเช็กว่ารัน node server.js อยู่ไหม)");
         }
-        try {
-            await axios.post('http://localhost:3001/cart/add', { bookId }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            alert(res.data.message); // แสดง "เพิ่มลงตะกร้าเรียบร้อย"
-            fetchCartCount();        // อัปเดตตัวเลขที่ Navbar
-            setViewBook(null);       
-            
-            alert("เพิ่มลงตะกร้าแล้ว!");
-        } catch (err) {
-            alert("ไม่สามารถเพิ่มสินค้าได้");
-            setViewBook(null);    
-        }
-    };
+    }
+};
     
     const [username, setUsername]       = useState('');
     const [isLoggedIn, setIsLoggedIn]   = useState(false);
@@ -446,10 +466,10 @@ function Home() {
                                     <i className="fas fa-heart"></i>
                                     <span className="nbadge red">1</span>
                                 </button>
-                                <button className="nav-icon-btn pos-rel" onClick={() => navigate('/cart')}>
+                                <button className="nav-icon-btn pos-rel" onClick={() => navigate('/cart')} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', position: 'relative', color: '#333' }}>
                                     <i className="fas fa-shopping-cart"></i>
-                                    {cartCount > 0 && <span className="nbadge red">{cartCount}</span>} 
-                            </button>
+                                    {cartCount > 0 && <span className="nbadge red" style={{ position: 'absolute', top: '-5px', right: '-8px', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '50%', border: '2px solid #fff' }}>{cartCount}</span>}
+                                </button>
                                 <div className="profile-wrap" ref={profileRef}>
                                     <button className="nav-user-btn" onClick={() => setProfileOpen(v => !v)}>
                                         {/* 👈 เปลี่ยนจากไอคอน <i> ธรรมดา เป็นเงื่อนไขเช็ครูป */}

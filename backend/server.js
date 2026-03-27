@@ -186,7 +186,7 @@ app.get('/cart', verifyToken, (req, res) => {
 // ➕ Add to Cart Endpoint
 app.post('/cart/add', verifyToken, (req, res) => {
     const userId = req.user.id;
-    const { bookId } = req.body;
+    const bookId = req.body.book_id || req.body.bookId;
 
     // 1. เช็คก่อนว่ามีของชิ้นนี้ในตะกร้าหรือยัง
     const checkSql = "SELECT * FROM cart_items WHERE user_id = ? AND book_id = ?";

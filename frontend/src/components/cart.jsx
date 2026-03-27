@@ -17,6 +17,8 @@ function Cart() {
             const res = await axios.get('http://localhost:3001/cart', {
                 headers: { Authorization: `Bearer ${token}` }
             });
+            console.log("ข้อมูลในตะกร้า:", res.data);
+            
             setCartItems(res.data);
             setCartCount(res.data.length);
         } catch (err) {
