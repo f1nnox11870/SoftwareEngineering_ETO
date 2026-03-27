@@ -93,6 +93,23 @@ db.run(`CREATE TABLE IF NOT EXISTS cart_items (
     }
 });
 
+// ❤️ favorites table
+db.run(CREATE TABLE IF NOT EXISTS favorites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    book_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, book_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (book_id) REFERENCES books(id)
+), (err) => {
+    if (err) {
+        console.error("Error creating favorites table:", err.message);
+    } else {
+        console.log("✅ favorites table ready.");
+    }
+});
+
 // สร้าง admin
 const createAdmin = async () => {
     const username = 'admin123';
@@ -410,6 +427,101 @@ app.get('/unlocked/:bookId', verifyToken, (req, res) => {
         res.json(rows.map(row => row.episode_id)); 
     });
 });
+
+// ➕ เพิ่ม favorite
+app.post('/favorites/add', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    const bookId = req.body.book_id || req.body.bookId;
+
+    const sql = `
+        INSERT OR IGNORE INTO favorites (user_id, book_id)
+        VALUES (?, ?)
+    `;
+
+    db.run(sql, [userId, bookId], function(err) {
+        if (err) return res.status(500).json({ message: "Database error" });
+        res.json({ message: "เพิ่มรายการโปรดแล้ว" });
+    });
+});
+
+// ❌ ลบ favorite
+app.delete('/favorites/remove', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    const bookId = req.body.book_id || req.body.bookId;
+
+    const sql = `
+        DELETE FROM favorites
+        WHERE user_id = ? AND book_id = ?
+    `;
+
+    db.run(sql, [userId, bookId], function(err) {
+        if (err) return res.status(500).json({ message: "Database error" });
+        res.json({ message: "ลบออกจากรายการโปรดแล้ว" });
+    });
+});
+
+// 🔁 toggle favorite (แนะนำให้ใช้ตัวนี้)
+app.post('/favorites/toggle', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    const bookId = req.body.book_id || req.body.bookId;
+
+    db.get(
+        `SELECT * FROM favorites WHERE user_id = ? AND book_id = ?`,
+        [userId, bookId],
+        (err, row) => {
+            if (err) return res.status(500).json({ message: "Database error" });
+
+            if (row) {
+                // ❌ remove
+                db.run(
+                    `DELETE FROM favorites WHERE user_id = ? AND book_id = ?`,
+                    [userId, bookId],
+                    () => res.json({ status: "removed" })
+                );
+            } else {
+                // ➕ add
+                db.run(
+                    `INSERT INTO favorites (user_id, book_id) VALUES (?, ?)`,
+                    [userId, bookId],
+                    () => res.json({ status: "added" })
+                );
+            }
+        }
+    );
+});
+
+// 🔍 ดึงเฉพาะ ID (ใช้เช็ค fav)
+app.get('/favorites', verifyToken, (req, res) => {
+    const userId = req.user.id;
+
+    db.all(
+        `SELECT book_id FROM favorites WHERE user_id = ?`,
+        [userId],
+        (err, rows) => {
+            if (err) return res.status(500).json({ message: "Database error" });
+            res.json(rows);
+        }
+    );
+});
+
+// 🔥 ดึง FAVORITES + BOOK (ใช้หน้า Favorites)
+app.get('/favorites/full', verifyToken, (req, res) => {
+    const userId = req.user.id;
+
+    const sql = `
+        SELECT b.*
+        FROM favorites f
+        JOIN books b ON f.book_id = b.id
+        WHERE f.user_id = ?
+        ORDER BY f.created_at DESC
+    `;
+
+    db.all(sql, [userId], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        res.json(rows);
+    });
+});
+
 // ================= START SERVER =================
 app.listen(port, () => {
     console.log(`🚀 Server is running on http://localhost:${port}`);
