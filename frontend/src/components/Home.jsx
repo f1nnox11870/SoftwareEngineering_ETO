@@ -442,7 +442,7 @@ function Home() {
                                             <div className="pd-divider"></div>
                                             <div className="pd-group-title">การใช้งาน</div>
                                             <div className="pd-item"><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
-                                            <div className="pd-item"><i className="fas fa-history"></i> ประวัติซื้อ</div>
+                                            <div className="pd-item" onClick={() => navigate('/history')}><i className="fas fa-history"></i> ประวัติซื้อ</div>
                                             <div className="pd-item" onClick={() => navigate('/topup')}><i className="fas fa-coins"></i> ซื้อเหรียญ</div>
                                             <div className="pd-divider"></div>
                                             <div className="pd-item" onClick={() => navigate('/settingprofile')}><i className="fas fa-cog"></i> ตั้งค่าบัญชี</div>

@@ -10,6 +10,8 @@ import Cart from './components/cart'
 import ProtectedRoute from './ProtectedRoute'
 import Favorites from './components/Favorites';
 import Admin from './components/Admin';
+import History from './components/History'
+
 function App() {
   return (
     <Router>
@@ -19,6 +21,7 @@ function App() {
           <Route path="/home"   element={<Home />} />
           <Route path="/topup"  element={<Topup />} />
           <Route path="/cart"   element={<Cart />} />
+          <Route path="/history"   element={<History />} />
           <Route path="/favorites" element={<Favorites />} />
           <Route path="/admin" element={<Admin />} />
           <Route element={<ProtectedRoute />}>
