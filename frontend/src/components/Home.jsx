@@ -35,12 +35,41 @@ const BANNERS = [
 ];
 
 // ── BookCard ──────────────────────────────────────────
-function BookCard({ book, isLoggedIn, onView,onAddToCart }) {
+function BookCard({ book, isLoggedIn, onView, onAddToCart }) {
     const [fav, setFav] = useState(false);
+
+    // 🔻 1. เพิ่มฟังก์ชันนี้เพื่อยิง API ไปบันทึก/ลบ รายการโปรด 🔻
+    const handleToggleFavorite = async (e) => {
+        e.stopPropagation(); // ป้องกันไม่ให้เผลอไปกดเปิดดูรายละเอียดหนังสือ
+        const token = localStorage.getItem('token');
+        if (!token) {
+            alert("กรุณาเข้าสู่ระบบก่อนครับ 🔒");
+            return;
+        }
+
+        try {
+            const res = await axios.post('http://localhost:3001/favorites/toggle', 
+                { bookId: book.id }, 
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            
+            // อัปเดตสถานะหัวใจบนหน้าจอตามที่ Database ตอบกลับมา
+            if (res.data.status === "added") {
+                setFav(true); // เปลี่ยนเป็นหัวใจทึบสีแดง
+            } else if (res.data.status === "removed") {
+                setFav(false); // เปลี่ยนกลับเป็นหัวใจโปร่ง
+            }
+        } catch (error) {
+            console.error("Error toggling favorite:", error);
+            if (error.response && error.response.status === 403) {
+                alert("เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่ครับ");
+            }
+        }
+    };
+
     return (
         <div className="bcard" style={{ background: 'none', border: 'none', padding: '0' }}>
             
-            {/* --- ส่วนที่ 1: รูปภาพและปุ่ม Hover --- */}
             <div className="bcard-cover" style={{ height: '230px', position: 'relative', borderRadius: '8px', overflow: 'hidden' }}>
                 <div className="bcard-img-placeholder" style={{ padding: 0, width: '100%', height: '100%' }}>
                     {book.image ? (
@@ -59,10 +88,13 @@ function BookCard({ book, isLoggedIn, onView,onAddToCart }) {
                 {isLoggedIn && (
                     <button
                         className={`bcard-fav ${fav ? 'active' : ''}`}
-                        style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 10 }}
-                        onClick={e => { e.stopPropagation(); setFav(v => !v); }}
+                        style={{ 
+                            position: 'absolute', top: '10px', right: '10px', zIndex: 10,
+                            color: fav ? '#ff4e63' : '#ccc' // 👈 ทำให้สีหัวใจชัดเจนขึ้น
+                        }}
+                        onClick={handleToggleFavorite} // 👈 2. เปลี่ยนมาเรียกใช้ฟังก์ชันบันทึกลง Database
                     >
-                        <i className={fav ? 'fas fa-heart' : 'far fa-heart'}></i>
+                        <i className={fav ? 'fas fa-heart' : 'far fa-heart'} style={{ fontSize: '20px' }}></i>
                     </button>
                 )}
 
@@ -77,49 +109,24 @@ function BookCard({ book, isLoggedIn, onView,onAddToCart }) {
                 </div>
             </div>
 
-            {/* --- ส่วนที่ 2: รายละเอียดใต้รูปภาพ (แสดงตลอดเวลา) --- */}
+            {/* --- ส่วนที่ 2: รายละเอียดใต้รูปภาพ --- */}
             <div className="bcard-details" style={{ 
-                marginTop: '10px', 
-                textAlign: 'left',
-                background: '#fff',
-                padding: '10px',
-                borderRadius: '8px',
-                boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
+                marginTop: '10px', textAlign: 'left', background: '#fff', padding: '10px', borderRadius: '8px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
             }}>
                 <div className="bcard-title" title={book.title} style={{ 
-                    fontSize: '14px', 
-                    fontWeight: 'bold', 
-                    color: '#333',
-                    marginBottom: '4px',
-                    display: '-webkit-box',
-                    WebkitLineClamp: '2',
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                    lineHeight: '1.2',
-                    height: '34px' 
+                    fontSize: '14px', fontWeight: 'bold', color: '#333', marginBottom: '4px', display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.2', height: '34px' 
                 }}>
                     {book.title}
                 </div>
 
                 <div className="bcard-category" style={{ 
-                    fontSize: '11px', 
-                    color: '#fff', 
-                    background: '#ff4e63', 
-                    display: 'inline-block', 
-                    padding: '2px 8px', 
-                    borderRadius: '10px', 
-                    marginBottom: '6px' 
+                    fontSize: '11px', color: '#fff', background: '#ff4e63', display: 'inline-block', padding: '2px 8px', borderRadius: '10px', marginBottom: '6px' 
                 }}>
                     {book.category || 'ไม่ระบุหมวดหมู่'}
                 </div>
                 
                 <div className="bcard-author" style={{ 
-                    fontSize: '12px', 
-                    color: '#888', 
-                    marginBottom: '8px', 
-                    whiteSpace: 'nowrap', 
-                    overflow: 'hidden', 
-                    textOverflow: 'ellipsis' 
+                    fontSize: '12px', color: '#888', marginBottom: '8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' 
                 }}>
                     <strong style={{ color: '#555' }}>Author: </strong>
                     {book.author || 'ไม่ระบุชื่อผู้แต่ง'}
@@ -133,9 +140,7 @@ function BookCard({ book, isLoggedIn, onView,onAddToCart }) {
                     <button 
                         onClick={(e) => { e.stopPropagation(); onView(book); }}
                         style={{ 
-                            background: '#333', color: '#fff', border: 'none', 
-                            padding: '4px 10px', borderRadius: '4px', fontSize: '12px', 
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' 
+                            background: '#333', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' 
                         }}
                     >
                         <i className="fas fa-eye"></i> View
@@ -193,13 +198,23 @@ function Home() {
     const fetchCartCount = async () => {
         const token = localStorage.getItem('token');
         if (!token) return;
+        
         try {
             const res = await axios.get('http://localhost:3001/cart', {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setCartCount(res.data.length); 
-        } catch (err) {
-            console.error("Error fetching cart:", err);
+            // ตรงนี้ปรับให้ตรงกับโค้ด set state ตะกร้าเดิมของคุณ (เช่น setCartCount(res.data.length))
+            setCartCount(res.data.length || 0); 
+        } catch (error) {
+            console.error("Error fetching cart:", error);
+            
+            // 🔻 เพิ่มการดักจับ Error 403 ตรงนี้ 🔻
+            if (error.response && error.response.status === 403) {
+                alert("เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่อีกครั้งครับ 🔒");
+                localStorage.clear(); // ล้าง Token เก่าทิ้ง
+                setIsLoggedIn(false);
+                window.location.reload(); // รีเฟรชหน้าเว็บ 1 รอบ
+            }
         }
     };
 
@@ -294,16 +309,26 @@ function Home() {
             if (token) {
                 setIsLoggedIn(true);
                 setRole(role);
-            }
-            if (!token) return;
-            try {
-                const res = await axios.get('http://localhost:3001/profile', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setCoins(res.data.coins ?? 0);
-                setProfileImage(res.data.image || null);
-            } catch {
-                setCoins(0);
+                try {
+                    const res = await axios.get('http://localhost:3001/profile', {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    setCoins(res.data.coins ?? 0); 
+                    setProfileImage(res.data.image || null); 
+                } catch (error) {
+                    console.error("Error fetching profile:", error);
+                    
+                    // 🔻 เพิ่มการดักจับ Error 403 ตรงนี้ 🔻
+                    if (error.response && error.response.status === 403) {
+                        localStorage.clear();
+                        setIsLoggedIn(false);
+                        window.location.reload();
+                    } else {
+                        setCoins(0);
+                    }
+                }
+            } else {
+                setCoins(null);
             }
         };
 

@@ -94,7 +94,7 @@ db.run(`CREATE TABLE IF NOT EXISTS cart_items (
 });
 
 // ❤️ favorites table
-db.run(CREATE TABLE IF NOT EXISTS favorites (
+db.run(`CREATE TABLE IF NOT EXISTS favorites (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
     book_id INTEGER,
@@ -102,7 +102,7 @@ db.run(CREATE TABLE IF NOT EXISTS favorites (
     UNIQUE(user_id, book_id),
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (book_id) REFERENCES books(id)
-), (err) => {
+)`, (err) => {
     if (err) {
         console.error("Error creating favorites table:", err.message);
     } else {
