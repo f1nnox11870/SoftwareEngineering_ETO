@@ -310,27 +310,15 @@ function Cart() {
                 </div>
             </header>
                  
-            {/* ══ HERO (สไตล์เดียวกับ Topup) ══ */}
+            {/* ══ HERO */}
             <div className="topup-hero">
                 <div className="topup-page-inner">
                     <div className="topup-breadcrumb">
                         <span className="topup-breadcrumb-home" onClick={() => navigate('/')}>
                             <i className="fas fa-house"></i>
                         </span>
-                        <i className="fas fa-angle-right" style={{ fontSize: 12, color: '#aaa' }}></i>
+                        <i className="fas fa-angle-right" style={{ fontSize: 12 }}></i>
                         <span className="topup-breadcrumb-cur">รถเข็น</span>
-                    </div>
-                    <div className="topup-balance-card">
-                        <i className="fa-solid fa-coins topup-balance-icon"></i>
-                        <div>
-                            <div className="topup-balance-label">เหรียญของฉัน</div>
-                            <div className="topup-balance-amount">
-                                {coins === null
-                                    ? <span className="topup-balance-loading">กำลังโหลด…</span>
-                                    : <>{coins.toLocaleString()} <span className="topup-balance-unit">เหรียญ</span></>
-                                }
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
