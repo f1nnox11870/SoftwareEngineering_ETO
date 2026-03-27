@@ -55,6 +55,7 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
     password TEXT,
     role TEXT DEFAULT 'user',
     image TEXT
+    
 )`, async (err) => {
     if (err) {
         console.error(err.message);
@@ -206,7 +207,7 @@ app.post('/admin/add-book', verifyToken, (req, res) => {
 // 👤 Get Profile
 app.get('/profile', verifyToken, (req, res) => {
     const userId = req.user.id;
-    const sql = "SELECT id, username, image FROM users WHERE id = ?";
+    const sql = "SELECT id, username, email, image FROM users WHERE id = ?";
 
     db.get(sql, [userId], (err, user) => {
         if (err) return res.status(500).json({ message: "Database error" });
@@ -215,6 +216,7 @@ app.get('/profile', verifyToken, (req, res) => {
         res.json({
             id: user.id,
             username: user.username,
+            email: user.email,
             image: user.image || null
         });
     });

@@ -2,11 +2,10 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import '../assets/settingprofile.css';
-import Login from './login';
-import Register from './Register';
- 
-const TABS = ['แนะนำ', 'โปรโมชั่น', 'จัดชุด', 'นิยาย', 'การ์ตูน', 'อีบุ๊กทั่วไป', 'ข่าว/นิตยสาร', 'เร็วๆ นี้'];
- 
+// import Login from './login';
+// import Register from './Register';
+
+// ── Constants สำหรับ Navbar ──
 const MENU_ITEMS = [
     { label: 'นิยาย',        subs: ['นิยายรักโรแมนติก','นิยายวาย','นิยายแฟนตาซี','นิยายสืบสวน','นิยายกำลังภายใน','ไลท์โนเวล','วรรณกรรมทั่วไป','นิยายยูริ','กวีนิพนธ์','แฟนเฟิค'] },
     { label: 'การ์ตูน',      subs: [] },
@@ -15,20 +14,20 @@ const MENU_ITEMS = [
     { label: 'หนังสือพิมพ์', subs: [] },
     { label: 'อีบุ๊กจัดชุด', subs: [] },
 ];
+
 const ROMANCE_SUBS = ['นิยายรักวัยรุ่น','นิยายรักแฟนตาซี','นิยายรักจีนโบราณ','นิยายรักจีนปัจจุบัน','นิยายรักกำลังภายใน','นิยายรักผู้ใหญ่'];
- 
+
 const MOCK_NOTIFICATIONS = [
-    { id: 1, icon: '🪙', title: 'เติมเหรียญสำเร็จ',   desc: 'คุณได้รับ 150 เหรียญเรียบร้อยแล้ว',           time: '5 นาทีที่แล้ว',    unread: true  },
+    { id: 1, icon: '🪙', title: 'เติมเหรียญสำเร็จ',   desc: 'คุณได้รับ 150 เหรียญเรียบร้อยแล้ว',          time: '5 นาทีที่แล้ว',    unread: true  },
     { id: 2, icon: '🔥', title: 'โปรโมชั่นพิเศษ!',    desc: 'ซื้อเหรียญวันนี้รับโบนัสพิเศษสูงสุด 30%',     time: '1 ชั่วโมงที่แล้ว', unread: true  },
     { id: 3, icon: '📚', title: 'หนังสือใหม่มาแล้ว',  desc: 'Record of Ragnarok เล่ม 12 วางจำหน่ายแล้ว',  time: '3 ชั่วโมงที่แล้ว', unread: false },
     { id: 4, icon: '🎉', title: 'ยินดีต้อนรับ!',       desc: 'สมัครสมาชิกสำเร็จ รับเหรียญฟรี 20 เหรียญ',   time: 'เมื่อวาน',          unread: false },
     { id: 5, icon: '💳', title: 'ประวัติการซื้อ',      desc: 'คุณซื้อ "นิยายรักสุดขอบฟ้า" เรียบร้อยแล้ว', time: '2 วันที่แล้ว',      unread: false },
 ];
- 
-// ── PasswordField ─────────────────────────────────────
-function PasswordField({ label, hint }) {
+
+// ── PasswordField Component (จากโค้ดแรก) ──
+function PasswordField({ label, hint, value, onChange }) {
     const [show, setShow] = useState(false);
-    const [val,  setVal]  = useState('');
     return (
         <div className="pw-field-group">
             <label className="pw-label">{label}</label>
@@ -37,8 +36,8 @@ function PasswordField({ label, hint }) {
                     className="pw-input"
                     type={show ? 'text' : 'password'}
                     placeholder={label}
-                    value={val}
-                    onChange={(e) => setVal(e.target.value)}
+                    value={value}
+                    onChange={onChange}
                 />
                 <button className="pw-eye" type="button" onClick={() => setShow(v => !v)}>
                     {show ? (
@@ -59,54 +58,65 @@ function PasswordField({ label, hint }) {
         </div>
     );
 }
- 
-// ── SettingProfile ────────────────────────────────────
+
+// ── Main SettingProfile Component ──
 function SettingProfile() {
     const navigate = useNavigate();
- 
+
+    // States ข้อมูลผู้ใช้
     const [username, setUsername]     = useState('');
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [email, setEmail]           = useState('');
+    const [avatar, setAvatar]         = useState(null);
     const [role, setRole]             = useState(null);
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [coins, setCoins]           = useState(null);
-    const [avatar, setAvatar]         = useState(null);   // URL รูปปัจจุบัน
-    const [uploading, setUploading]   = useState(false);  // loading state
- 
+    const [uploading, setUploading]   = useState(false);
+
+    // States สำหรับเปลี่ยนรหัสผ่าน
     const [settingTab, setSettingTab] = useState('account');
- 
-    const [modal, setModal]             = useState(null);
-    const [activeTab, setActiveTab]     = useState('แนะนำ');
+    const [oldPassword, setOldPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+
+    // States สำหรับ Navbar แบบใหม่
     const [megaOpen, setMegaOpen]       = useState(false);
     const [hoveredMenu, setHoveredMenu] = useState(null);
     const [profileOpen, setProfileOpen] = useState(false);
     const [notifOpen, setNotifOpen]     = useState(false);
     const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
- 
-    const megaRef      = useRef(null);
+
+    // Refs
     const profileRef   = useRef(null);
-    const notifRef     = useRef(null);
     const fileInputRef = useRef(null);
+    const megaRef      = useRef(null);
+    const notifRef     = useRef(null);
     const coinInterval = useRef(null);
- 
-    // ── โหลด profile (username + avatar) ──
+
+    // 1. ดึงข้อมูลโปรไฟล์เมื่อโหลดหน้า
     useEffect(() => {
         const token = localStorage.getItem('token');
-        const user  = localStorage.getItem('username');
-        const r     = localStorage.getItem('role');
         if (token) {
             setIsLoggedIn(true);
-            setRole(r);
-            if (user) setUsername(user);
- 
-            // ดึง avatar จาก API
+            setRole(localStorage.getItem('role'));
+            
             axios.get('http://localhost:3001/profile', {
                 headers: { Authorization: `Bearer ${token}` }
             }).then(res => {
-                if (res.data.avatar) setAvatar(res.data.avatar);
-            }).catch(() => {});
+                setUsername(res.data.username);
+                if (res.data.email) setEmail(res.data.email);
+                if (res.data.image) setAvatar(res.data.image); 
+            }).catch(err => {
+                console.error("Profile fetch error", err);
+                if(err.response?.status === 401 || err.response?.status === 403) {
+                    handleLogout();
+                }
+            });
+        } else {
+            navigate('/');
         }
-    }, []);
- 
-    // ── Fetch coins ──
+    }, [navigate]);
+
+    // 2. Fetch Coins ทุกๆ 30 วินาที (จากโค้ดที่สอง)
     useEffect(() => {
         const fetchCoins = async () => {
             const token = localStorage.getItem('token');
@@ -127,79 +137,92 @@ function SettingProfile() {
         }
         return () => clearInterval(coinInterval.current);
     }, [isLoggedIn]);
- 
-    // ── Click outside ──
+
+    // 3. ปิด dropdown เมื่อคลิกข้างนอก (รวมทั้ง mega menu, แจ้งเตือน, โปรไฟล์)
     useEffect(() => {
-        const h = (e) => {
+        const handleClickOutside = (e) => {
             if (megaRef.current    && !megaRef.current.contains(e.target))    setMegaOpen(false);
             if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false);
             if (notifRef.current   && !notifRef.current.contains(e.target))   setNotifOpen(false);
         };
-        document.addEventListener('mousedown', h);
-        return () => document.removeEventListener('mousedown', h);
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
- 
-    // ── อัปโหลดรูป ──
-    const handleAvatarChange = async (e) => {
+
+    // 4. ฟังก์ชันอัปโหลดรูปโปรไฟล์ (จากโค้ดแรก)
+    const handleAvatarChange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
- 
-        const token = localStorage.getItem('token');
-        const formData = new FormData();
-        formData.append('avatar', file);
- 
+
         setUploading(true);
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+            const base64Image = reader.result;
+            const token = localStorage.getItem('token');
+            try {
+                await axios.put('http://localhost:3001/profile/image', 
+                    { image: base64Image }, 
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                setAvatar(base64Image); 
+                alert("อัปเดตรูปโปรไฟล์สำเร็จ!");
+            } catch (err) {
+                alert('อัปโหลดรูปไม่สำเร็จ');
+            } finally {
+                setUploading(false);
+            }
+        };
+        reader.readAsDataURL(file); 
+    };
+
+    // 5. ฟังก์ชันเปลี่ยนรหัสผ่าน (จากโค้ดแรก)
+    const handlePasswordUpdate = async () => {
+        if (!oldPassword || !newPassword || !confirmPassword) return alert("กรุณากรอกข้อมูลให้ครบ");
+        if (newPassword !== confirmPassword) return alert("รหัสผ่านใหม่ไม่ตรงกัน");
+        if (newPassword.length < 8) return alert("รหัสผ่านต้องมี 8 ตัวอักษรขึ้นไป");
+
         try {
-            const res = await axios.post('http://localhost:3001/profile/avatar', formData, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'multipart/form-data'
-                }
-            });
-            setAvatar(res.data.avatar); // อัปเดต URL ทั้ง setting และ navbar
+            const token = localStorage.getItem('token');
+            await axios.put('http://localhost:3001/profile/password', 
+                { oldPassword, newPassword }, 
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            alert("เปลี่ยนรหัสผ่านสำเร็จ!");
+            setOldPassword(''); setNewPassword(''); setConfirmPassword('');
         } catch (err) {
-            alert('อัปโหลดรูปไม่สำเร็จ');
-        } finally {
-            setUploading(false);
+            alert(err.response?.data?.message || "เกิดข้อผิดพลาด");
         }
     };
- 
+
+    // 6. ฟังก์ชันสำหรับการแจ้งเตือนและการออกจากระบบ
     const unreadCount = notifications.filter(n => n.unread).length;
     const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
     const markOneRead = (id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
- 
+
     const handleLogout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('username');
+        localStorage.removeItem('role');
         setIsLoggedIn(false); setUsername(''); setAvatar(null); setProfileOpen(false); setCoins(null);
+        navigate('/');
     };
-    const handleLoginSuccess = (name) => {
-        setIsLoggedIn(true); setUsername(name); setModal(null);
-    };
-    const handleOverlayClick = (e) => {
-        if (e.target.classList.contains('modal-overlay')) setModal(null);
-    };
- 
-    // ── Avatar component (ใช้ซ้ำ) ──
+
     const AvatarImg = ({ size = 30, className = '' }) =>
         avatar ? (
-            <img src={avatar} alt="avatar"
-                style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover' }}
-                className={className}
-            />
+            <img src={avatar} alt="avatar" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover' }} className={className} />
         ) : (
             <i className={`fas fa-user-circle nav-avatar ${className}`} style={{ fontSize: size }}></i>
         );
- 
+
     return (
         <div className="home-page">
- 
-            {/* ══ NAVBAR ══ */}
+            
+            {/* ══ NAVBAR (จากโค้ดที่ 2) ══ */}
             <header className="navbar">
                 <div className="navbar-inner">
                     <div className="nav-left">
                         <div className="nav-logo">
-                            <div className="nav-logo-box"><i className="fas fa-book-open"></i></div>
+                            <div className="nav-logo-box"onClick={() => navigate('/')}><i className="fas fa-book-open"></i></div>
                         </div>
                         <div className="mega-wrap" ref={megaRef}>
                             <button className="nav-hamburger" onClick={() => setMegaOpen(v => !v)}>
@@ -239,16 +262,16 @@ function SettingProfile() {
                             )}
                         </div>
                     </div>
- 
+
                     <div className="nav-center">
                         <div className="nav-search">
                             <input type="text" placeholder="วันนี้อ่านอะไรดี?" />
                             <button><i className="fas fa-search"></i></button>
                         </div>
                     </div>
- 
+
                     <div className="nav-right">
-                        {isLoggedIn ? (
+                        {isLoggedIn && (
                             <>
                                 {role === 'admin' && (
                                     <button className="btn-admin" onClick={() => navigate('/admin')}>จัดการเนื้อหา</button>
@@ -288,8 +311,7 @@ function SettingProfile() {
                                     <i className="fas fa-shopping-cart"></i><span className="nbadge red">1</span>
                                 </button>
                                 <div className="profile-wrap" ref={profileRef}>
-                                    <button className="nav-user-btn" onClick={() => setProfileOpen(v => !v)}>
-                                        {/* ── Avatar ใน navbar เปลี่ยนตามรูปที่ upload ── */}
+                                    <button className="nav-user-btn" onClick={() => { setProfileOpen(v => !v); setNotifOpen(false); }}>
                                         <AvatarImg size={30} />
                                         <div className="nav-user-info">
                                             <span className="nav-username">{username}</span>
@@ -301,7 +323,7 @@ function SettingProfile() {
                                                 <AvatarImg size={36} />
                                                 <div>
                                                     <div className="pd-name">{username}</div>
-                                                    <div className="pd-sub">{username}</div>
+                                                    <div className="pd-sub">{email || 'ไม่ได้ระบุอีเมล'}</div>
                                                 </div>
                                             </div>
                                             {coins !== null && (
@@ -319,7 +341,7 @@ function SettingProfile() {
                                             <div className="pd-divider"></div>
                                             <div className="pd-group-title">การใช้งาน</div>
                                             <div className="pd-item"><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
-                                            <div className="pd-item"><i className="fas fa-history"></i> ประวัติซื้อ</div>
+                                            <div className="pd-item" onClick={() => navigate('/history')}><i className="fas fa-history"></i> ประวัติซื้อ</div>
                                             <div className="pd-item" onClick={() => navigate('/topup')}><i className="fas fa-coins"></i> ซื้อเหรียญ</div>
                                             <div className="pd-divider"></div>
                                             <div className="pd-item" onClick={() => navigate('/settingprofile')}><i className="fas fa-cog"></i> ตั้งค่าบัญชี</div>
@@ -331,149 +353,80 @@ function SettingProfile() {
                                     )}
                                 </div>
                             </>
-                        ) : (
-                            <>
-                                <button className="btn-login"    onClick={() => setModal('login')}>เข้าสู่ระบบ</button>
-                                <button className="btn-register" onClick={() => setModal('register')}>สมัครสมาชิก</button>
-                            </>
                         )}
                     </div>
                 </div>
             </header>
- 
-            {/* ══ SUB-TABS BAR ══ */}
-            <div className="sub-tabs">
-                <div className="sub-tabs-inner">
-                    {TABS.map(tab => (
-                        <button key={tab}
-                            className={`sub-tab ${activeTab === tab ? 'active' : ''}`}
-                            onClick={() => setActiveTab(tab)}>
-                            {tab}
-                        </button>
-                    ))}
-                </div>
-            </div>
- 
-            {/* ══ SETTING CONTENT ══ */}
+
+            {/* ══ SETTING CONTENT (จากโค้ดที่ 1) ══ */}
             <div className="setting-center-wrapper">
                 <div className="page">
- 
                     <div className="breadcrumb">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
                             <polyline points="9,22 9,12 15,12 15,22"/>
-                        </svg>
-                        <span className="separator">›</span>
-                        <span>ตั้งค่าบัญชี</span>
-                    </div>
- 
+                        </svg><span>ตั้งค่าบัญชี</span></div>
                     <h1 className="heading">ตั้งค่าบัญชี</h1>
- 
+
                     <div className="layout">
                         <div className="sidebar">
-                            {['account', 'password'].map(tab => (
-                                <button
-                                    key={tab}
-                                    className={`sidebar-item ${settingTab === tab ? 'active' : ''}`}
-                                    onClick={() => setSettingTab(tab)}
-                                >
-                                    {tab === 'account' ? 'บัญชี' : 'รหัสผ่าน'}
-                                </button>
-                            ))}
+                            <button className={`sidebar-item ${settingTab === 'account' ? 'active' : ''}`} onClick={() => setSettingTab('account')}>บัญชี</button>
+                            <button className={`sidebar-item ${settingTab === 'password' ? 'active' : ''}`} onClick={() => setSettingTab('password')}>รหัสผ่าน</button>
                         </div>
- 
+
                         <div className="content">
- 
-                            {/* ── Tab: บัญชี ── */}
                             {settingTab === 'account' && (
                                 <div className="card">
                                     <p className="avatar-label">รูปโปรไฟล์</p>
- 
-                                    {/* Avatar upload */}
                                     <div className="avatar-wrap" onClick={() => fileInputRef.current.click()} style={{ cursor: 'pointer' }}>
                                         {avatar ? (
                                             <img src={avatar} alt="avatar" className="avatar-img" />
                                         ) : (
                                             <div className="avatar">
                                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="1.5">
-                                                    <rect x="3" y="3" width="18" height="18" rx="2"/>
-                                                    <circle cx="8.5" cy="8.5" r="1.5"/>
-                                                    <polyline points="21,15 16,10 5,21"/>
+                                                    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/>
                                                 </svg>
                                             </div>
                                         )}
-                                        <div className="cam-btn">
-                                            {uploading ? (
-                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#b5651d" strokeWidth="2.5" style={{ animation: 'spin 1s linear infinite' }}>
-                                                    <circle cx="12" cy="12" r="10" strokeDasharray="40" strokeDashoffset="10"/>
-                                                </svg>
-                                            ) : (
-                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2">
-                                                    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-                                                    <circle cx="12" cy="13" r="4"/>
-                                                </svg>
-                                            )}
-                                        </div>
-                                        {/* hidden file input */}
-                                        <input
-                                            ref={fileInputRef}
-                                            type="file"
-                                            accept="image/*"
-                                            style={{ display: 'none' }}
-                                            onChange={handleAvatarChange}
-                                        />
+                                        <div className="cam-btn">{uploading ? "⏳" : "📷"}</div>
+                                        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarChange} />
                                     </div>
- 
-                                    {/* แสดงแค่ username และ email แบบ read-only */}
+
                                     <div className="field-row">
                                         <div className="field-info">
                                             <div className="field-label">ชื่อผู้ใช้</div>
                                             <div className="field-value">{username || '-'}</div>
                                         </div>
                                     </div>
- 
+
                                     <div className="field-row" style={{ borderBottom: 'none' }}>
                                         <div className="field-info">
-                                            <div className="field-label">อีเมล์</div>
-                                            <div className="field-value">{username ? `${username}@gmail.com` : '-'}</div>
+                                            <div className="field-label">อีเมล</div>
+                                            <div className="field-value">{email || <span style={{color:'#999'}}>ยังไม่ได้ระบุอีเมล</span>}</div>
                                         </div>
                                     </div>
                                 </div>
                             )}
- 
-                            {/* ── Tab: รหัสผ่าน ── */}
+
                             {settingTab === 'password' && (
                                 <div className="card">
-                                    <p className="pw-section-title">รหัสผ่านใหม่</p>
-                                    <PasswordField
-                                        label="รหัสผ่านใหม่"
-                                        hint="รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษรขึ้นไป และต้องมีตัวอักษรพิมพ์ใหญ่และตัวเลขอย่างน้อย 1 ตัว"
-                                    />
-                                    <PasswordField label="ยืนยันรหัสผ่านใหม่" />
+                                    <p className="pw-section-title">เปลี่ยนรหัสผ่าน</p>
+                                    
+                                    <PasswordField label="รหัสผ่านปัจจุบัน" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} />
+                                    <PasswordField label="รหัสผ่านใหม่" hint="รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                                    <PasswordField label="ยืนยันรหัสผ่านใหม่" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+                                    
                                     <div className="pw-confirm-row">
-                                        <button className="save-btn">ยืนยัน</button>
+                                        <button className="save-btn" onClick={handlePasswordUpdate}>ยืนยันการเปลี่ยนรหัสผ่าน</button>
                                     </div>
                                 </div>
                             )}
- 
                         </div>
                     </div>
                 </div>
             </div>
- 
-            {/* ══ MODAL ══ */}
-            {modal && (
-                <div className="modal-overlay" onClick={handleOverlayClick}>
-                    {modal === 'login' && (
-                        <Login onClose={() => setModal(null)} onSwitch={() => setModal('register')} onLoginSuccess={handleLoginSuccess} />
-                    )}
-                    {modal === 'register' && (
-                        <Register onClose={() => setModal(null)} onSwitch={() => setModal('login')} />
-                    )}
-                </div>
-            )}
         </div>
     );
 }
- 
+
 export default SettingProfile;
