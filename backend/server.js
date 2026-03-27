@@ -43,27 +43,14 @@ db.run(`CREATE TABLE IF NOT EXISTS episodes (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (book_id) REFERENCES books(id)
 )`);
-// 🛒 cart_items table
-db.run(`CREATE TABLE IF NOT EXISTS cart_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    book_id INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (book_id) REFERENCES books(id)
-)`, (err) => {
-    if (err) {
-        console.error("Error creating cart_items table:", err.message);
-    } else {
-        console.log("cart_items table ready.");
-    }
-});
-// admin
+//users table
 db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
+    email TEXT UNIQUE,
     password TEXT,
-    role TEXT DEFAULT 'user'
+    role TEXT DEFAULT 'user',
+    image TEXT
 )`, async (err) => {
     if (err) {
         console.error(err.message);
@@ -86,12 +73,12 @@ db.run(`ALTER TABLE users ADD COLUMN image TEXT`, (err) => {
 const createAdmin = async () => {
     const username = 'admin123';
     const password = '11111111';
-
+    const email = 'admin@example.com';
     const hashedPassword = await bcrypt.hash(password, 10);
 
     db.run(
-        `INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)`,
-        [username, hashedPassword, 'admin'],
+        `INSERT OR IGNORE INTO users (username, email, password, role) VALUES (?, ?, ?, ?)`,
+        [username, email, hashedPassword, 'admin'],
         function (err) {
             if (err) console.error(err.message);
             else console.log('✅ Admin ready');
@@ -126,46 +113,51 @@ function verifyToken(req, res, next) {
 
 //API EndPoint
 
-//Register ENDPOINT
-
+// 📝 Register ENDPOINT
 app.post('/register', async (req, res) => {
-    const { username, password } = req.body;
-    if (!username || !password) {
-        return res.status(400).json({ message: 'Username and password are required' });
+    const { username, email, password } = req.body; // 🔻 รับค่า email มาด้วย
+    
+    if (!username || !email || !password) {
+        return res.status(400).json({ message: 'Username, Email และ Password ขาดหายไป' });
     }
+    
     const hashedPassword = await bcrypt.hash(password, 10);
-    const sql = 'INSERT INTO users (username, password) VALUES (?, ?)';
-    db.run(sql, [username, hashedPassword], function (err) {
+    const sql = 'INSERT INTO users (username, email, password) VALUES (?, ?, ?)';
+    
+    db.run(sql, [username, email, hashedPassword], function (err) {
         if (err) {
-            if(err.errno === 19) {
-                return res.status(409).json({ message: 'Username already exists' });
+            if(err.message.includes('UNIQUE')) {
+                return res.status(409).json({ message: 'ชื่อผู้ใช้งาน หรือ อีเมล นี้ถูกสมัครไปแล้ว' });
             }
             return res.status(500).json({ message: 'Database error' });
         }
-
-        res.status(201).json({ message: 'User registered successfully',userId: this.lastID });
+        res.status(201).json({ message: 'User registered successfully', userId: this.lastID });
     })
 });
-// login endpoint
+// 🔑 Login endpoint
 app.post('/login', (req, res) => {
-    const { username, password } = req.body;
-    const sql = 'SELECT * FROM users WHERE username = ?';
+    // หน้าบ้านจะส่งค่าช่องกรอกมาในตัวแปร username (ซึ่งอาจจะเป็น username หรือ email ก็ได้)
+    const { username, password } = req.body; 
+    
+    // 🔻 ค้นหาจากฐานข้อมูลว่า ตรงกับ username หรือ email
+    const sql = 'SELECT * FROM users WHERE username = ? OR email = ?';
 
-    db.get(sql, [username], async (err, user) => {
+    db.get(sql, [username, username], async (err, user) => {
         if (err) {
-            return res.status(500).json({ message: 'Sever error' });
+            return res.status(500).json({ message: 'Server error' });
         }
         if (!user) {
-            return res.status(404).json({ message: 'user not found' });
+            return res.status(404).json({ message: 'ไม่พบชื่อผู้ใช้งานหรืออีเมลนี้' });
         }
 
-        const isMatch = await bcrypt.compare(password,user.password);
+        const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid credentials' });
+            return res.status(401).json({ message: 'รหัสผ่านไม่ถูกต้อง' });
         }
+        
         const secret = JWT_SECRET || 'your_fallback_secret';
         const token = jwt.sign({ id: user.id , username: user.username , role: user.role }, secret, { expiresIn: '1h' });
-        res.json({ message: 'Login successful', token });
+        res.json({ message: 'Login successful', token, username: user.username });
     })
 });
 
@@ -280,43 +272,5 @@ app.get('/books', (req, res) => {
             return res.status(500).json({ message: 'Database error' });
         }
         res.json(rows); // ส่งข้อมูลหนังสือทั้งหมดกลับไปให้ Front-end
-    });
-});
-// --- API ดึงข้อมูลตะกร้า ---
-app.get('/cart', verifyToken, (req, res) => {
-    const userId = req.user.id; 
-    const sql = `
-        SELECT 
-            cart_items.id AS cart_item_id, 
-            books.id AS book_id, 
-            books.title, 
-            books.price, 
-            books.image 
-        FROM cart_items 
-        JOIN books ON cart_items.book_id = books.id 
-        WHERE cart_items.user_id = ?
-    `;
-    
-    db.all(sql, [userId], (err, rows) => {
-        if (err) {
-            console.error("Cart Error:", err.message);
-            return res.status(500).json({ error: "ดึงข้อมูลล้มเหลว" });
-        }
-        console.log("Data sent to frontend:", rows); // เพิ่มบรรทัดนี้เพื่อเช็คที่หน้าจอ Terminal ของ Node.js
-        res.json(rows); 
-    });
-});
-// --- API เพิ่มลงตะกร้า ---
-app.post('/cart', verifyToken, (req, res) => {
-    const userId = req.user?.id; 
-    const { bookId } = req.body; 
-    const sql = "INSERT INTO cart_items (user_id, book_id) VALUES (?, ?)";
-    
-    db.run(sql, [userId, bookId], function(err) {
-        if (err) {
-            console.error(err.message);
-            return res.status(500).json({ error: "เกิดข้อผิดพลาดที่ฐานข้อมูล" });
-        }
-        res.status(200).json({ message: "เพิ่มลงตะกร้าสำเร็จ!", id: this.lastID });
     });
 });
