@@ -186,7 +186,7 @@ app.get('/profile', verifyToken, (req, res) => {
 
     const userId = req.user.id;
 
-    const sql = "SELECT id, username FROM users WHERE id = ?";
+    const sql = "SELECT id, username, image FROM users WHERE id = ?";
 
     db.get(sql, [userId], (err, user) => {
         if (err) {
@@ -199,7 +199,7 @@ app.get('/profile', verifyToken, (req, res) => {
 
         res.json({
             id: user.id,
-            username: user.username
+            username: user.username,
             image: user.image || null
         });
     });
@@ -226,9 +226,11 @@ app.put('/profile/password', verifyToken, async (req, res) => {
     const { oldPassword, newPassword } = req.body;
 
     db.get("SELECT password FROM users WHERE id = ?", [userId], async (err, user) => {
-
+        if (err || !user) {
+            return res.status(404).json({ message: "User not found" });
+        }
         const match = await bcrypt.compare(oldPassword, user.password);
-
+        
         if (!match) {
             return res.status(401).json({ message: "Wrong password" });
         }
