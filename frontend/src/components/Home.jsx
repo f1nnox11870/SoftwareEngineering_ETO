@@ -410,10 +410,7 @@ function Home() {
     // กรองหนังสือ
     const mangaBooks = books.filter(b => b.category === 'มังงะ' || b.category === 'การ์ตูน');
     const novelBooks = books.filter(b => b.category === 'นิยาย' || b.category?.includes('นิยาย'));
-    //check ความเป็นเจ้าของ
-    const isOwned = isLoggedIn && Array.isArray(purchasedBooks) && viewBook 
-    ? purchasedBooks.includes(viewBook.id) 
-    : false;
+
     return (
         <div className="home-page">
 
@@ -725,50 +722,20 @@ function Home() {
                             {viewBook.description || 'ไม่มีรายละเอียดสำหรับหนังสือเล่มนี้'}
                         </div>
 
-                     <div style={{ marginTop: '25px', display: 'flex', gap: '10px' }}>
-    
-                        {isOwned ? (
+                        <div style={{ marginTop: '25px', display: 'flex', gap: '10px' }}>
+                            {isLoggedIn && (
+                                <button 
+                                    onClick={() => addToCart(viewBook.id)}
+                                    style={{ flex: 1, padding: '12px', background: '#ff4e63', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' }}>
+                                    <i className="fas fa-shopping-cart"></i> เพิ่มลงตะกร้า
+                                </button>
+                            )}
                             <button 
                                 onClick={() => navigate(`/read/${viewBook.id}`)} 
-                                style={{ 
-                                    width: '100%', padding: '12px', 
-                                    background: '#2ecc71', color: '#fff', 
-                                    border: 'none', borderRadius: '6px', 
-                                    cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' 
-                                }}>
+                                style={{ flex: isLoggedIn ? 1 : 'none', width: isLoggedIn ? 'auto' : '100%', padding: '12px', background: '#f5f5f5', color: '#333', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' }}>
                                 📖 อ่านเลย
                             </button>
-                        ) : (
-                            <>
-                                {isLoggedIn && (
-                                    <button 
-                                        onClick={() => addToCart(viewBook.id)}
-                                        style={{ 
-                                            flex: 1, padding: '12px', 
-                                            background: '#ff4e63', color: '#fff', 
-                                            border: 'none', borderRadius: '6px', 
-                                            cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' 
-                                        }}>
-                                        <i className="fas fa-shopping-cart"></i> เพิ่มลงตะกร้า
-                                    </button>
-                                )}
-                                
-                                <button 
-                                    onClick={() => navigate(`/read/${viewBook.id}`)} 
-                                    style={{ 
-                                        flex: isLoggedIn ? 1 : 'none', 
-                                        width: isLoggedIn ? 'auto' : '100%', 
-                                        padding: '12px', background: '#f5f5f5', 
-                                        color: '#333', border: '1px solid #ddd', 
-                                        borderRadius: '6px', cursor: 'pointer', 
-                                        fontWeight: 'bold', fontSize: '15px' 
-                                    }}>
-                                    📖 ทดลองอ่าน
-                                </button>
-                            </>
-                        )}
-                        
-                    </div>
+                        </div>
                     </div>
                 </div>
             )}
