@@ -937,3 +937,163 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
     transition: background 0.12s;
 }
 .notif-footer:hover { background: #fff5ec; }
+
+/* ══ เพิ่มต่อท้าย topup.css ══ */
+
+/* ── ส่วนแนบสลิป ── */
+.topup-slip-section {
+    margin-top: 18px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 16px;
+}
+
+.topup-slip-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e0e0e0;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.topup-slip-required {
+    font-size: 11px;
+    color: #ef9a9a;
+    font-weight: 400;
+}
+
+/* dropzone */
+.topup-slip-dropzone {
+    border: 2px dashed rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 22px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: rgba(255,255,255,0.02);
+}
+.topup-slip-dropzone:hover {
+    border-color: #b5651d;
+    background: rgba(181,101,29,0.06);
+}
+
+.topup-slip-upload-icon {
+    font-size: 28px;
+    color: #666;
+    display: block;
+    margin-bottom: 8px;
+}
+.topup-slip-upload-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: #bbb;
+    margin-bottom: 3px;
+}
+.topup-slip-upload-hint {
+    font-size: 11px;
+    color: #666;
+}
+
+/* preview */
+.topup-slip-preview-wrap {
+    position: relative;
+    text-align: center;
+}
+.topup-slip-preview-img {
+    width: 100%;
+    max-height: 220px;
+    object-fit: contain;
+    border-radius: 8px;
+    border: 2px solid rgba(181,101,29,0.5);
+    background: rgba(0,0,0,0.3);
+}
+.topup-slip-remove {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 5px 14px;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px;
+    color: #aaa;
+    font-size: 12px;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+}
+.topup-slip-remove:hover {
+    color: #ef9a9a;
+    border-color: #ef9a9a;
+}
+
+/* error */
+.topup-slip-error {
+    margin-top: 10px;
+    padding: 9px 12px;
+    background: rgba(198,40,40,0.15);
+    border: 1px solid rgba(198,40,40,0.4);
+    border-radius: 7px;
+    color: #ef9a9a;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.qr-container {
+    background: white;
+    padding: 15px;
+    border-radius: 12px;
+    display: inline-block;
+    margin: 15px 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.qr-image {
+    width: 220px;
+    height: 220px;
+    display: block;
+}
+
+.price-tag {
+    font-size: 20px;
+    font-weight: bold;
+    color: #00316d;
+    margin-top: 10px;
+}
+/* ══ QR จริง (PromptPay) ══ */
+.topup-qr-real-img {
+    width: 200px;
+    height: 200px;
+    display: block;
+    border-radius: 4px;
+}
+
+/* loading state */
+.topup-qr-loading {
+    width: 200px; height: 200px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 10px;
+    color: #b5651d; font-size: 13px;
+}
+.topup-qr-loading i { font-size: 32px; }
+
+/* error state */
+.topup-qr-error {
+    width: 200px; min-height: 120px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 8px;
+    color: #c62828; font-size: 12px;
+    text-align: center; padding: 12px;
+}
+.topup-qr-error i { font-size: 24px; }
+.topup-qr-retry {
+    margin-top: 4px;
+    padding: 6px 16px;
+    background: #b5651d; color: white; border: none;
+    border-radius: 6px; cursor: pointer; font-size: 12px;
+    font-family: 'Sarabun', sans-serif; font-weight: 600;
+    transition: background 0.2s;
+}
+.topup-qr-retry:hover { background: #8B4513; }

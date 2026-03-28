@@ -317,7 +317,7 @@ function MyShelf() {
                                                     </div>
                                                 ))}
                                             </div>
-                                            <div className="notif-footer">ดูการแจ้งเตือนทั้งหมด</div>
+                                            <div className="notif-footer" onClick={() => setNotifOpen(false)}>ดูการแจ้งเตือนทั้งหมด</div>
                                         </div>
                                     )}
                                 </div>
@@ -370,7 +370,7 @@ function MyShelf() {
                                                 </>
                                             )}
                                             <div className="pd-divider"></div>
-                                            <div className="pd-item"><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
+                                            <div className="pd-item" onClick={() => navigate('/myshelf')}><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
                                             <div className="pd-item" onClick={() => navigate('/history')}><i className="fas fa-history"></i> ประวัติซื้อ</div>
                                             <div className="pd-item" onClick={() => navigate('/topup')}><i className="fas fa-coins"></i> ซื้อเหรียญ</div>
                                             <div className="pd-divider"></div>

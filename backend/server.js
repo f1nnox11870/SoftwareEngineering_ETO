@@ -49,14 +49,14 @@ db.run(`CREATE TABLE IF NOT EXISTS episodes (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (book_id) REFERENCES books(id)
 )`);
-// 🔓 unlocked_episodes table (เก็บข้อมูลว่า User คนไหนปลดล็อกตอนไหนไปแล้ว)
+// 🔓 unlocked_episodes table
 db.run(`CREATE TABLE IF NOT EXISTS unlocked_episodes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
     book_id INTEGER,
     episode_id INTEGER,
     unlocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, episode_id) -- ป้องกันการซื้อตอนเดิมซ้ำ
+    UNIQUE(user_id, episode_id)
 )`);
 // 👤 users table
 db.run(`CREATE TABLE IF NOT EXISTS users (
@@ -113,7 +113,7 @@ db.run(`CREATE TABLE IF NOT EXISTS favorites (
     }
 });
 
-// 📚 purchased_books table (เก็บประวัติการเป็นเจ้าของหนังสือ)
+// 📚 purchased_books table
 db.run(`CREATE TABLE IF NOT EXISTS purchased_books (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
@@ -125,20 +125,21 @@ db.run(`CREATE TABLE IF NOT EXISTS purchased_books (
     else console.log("✅ Table 'purchased_books' is ready.");
 });
 
-// 🧾 purchase_history table (ประวัติการใช้งานเหรียญ ซื้อหนังสือ/ตอน)
+// 🧾 purchase_history table
 db.run(`CREATE TABLE IF NOT EXISTS purchase_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
-    title TEXT,       -- ชื่อหนังสือ หรือ ชื่อตอนที่ซื้อ
-    type TEXT,        -- ประเภท: 'book' หรือ 'episode'
-    price INTEGER,    -- จำนวนเหรียญที่จ่ายไป
+    title TEXT,
+    type TEXT,
+    price INTEGER,
     purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
 )`, (err) => {
     if (err) console.error("Error creating purchase_history table:", err);
     else console.log("✅ Table 'purchase_history' is ready.");
 });
-// 🛠️ เพิ่มตาราง Banners  🛠️
+
+// 🛠️ banners table
 db.run(`CREATE TABLE IF NOT EXISTS banners (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     image TEXT NOT NULL,
@@ -146,17 +147,36 @@ db.run(`CREATE TABLE IF NOT EXISTS banners (
     link TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+
+// 💰 topup_requests table — เก็บคำขอเติมเหรียญพร้อมสลิป
+db.run(`CREATE TABLE IF NOT EXISTS topup_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    package_id TEXT NOT NULL,
+    coins INTEGER NOT NULL,
+    bonus INTEGER DEFAULT 0,
+    total_coins INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    slip_image TEXT,
+    status TEXT DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    approved_at DATETIME,
+    approved_by INTEGER,
+    note TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+)`, (err) => {
+    if (err) console.error("Error creating topup_requests table:", err);
+    else console.log("✅ Table 'topup_requests' is ready.");
+});
+
 // สร้าง admin
 const createAdmin = async () => {
     const username = 'admin123';
     const password = '11111111';
     const email = 'admin@example.com';
     const hashedPassword = await bcrypt.hash(password, 10);
-    
-    // 💰 กำหนดจำนวนเหรียญให้แอดมินตรงนี้ (เช่น 999,999 เหรียญ)
     const adminCoins = 999999; 
 
-    // 1. ลองสร้างบัญชีแอดมิน (กรณีรันครั้งแรก)
     db.run(
         `INSERT OR IGNORE INTO users (username, email, password, role, coins) VALUES (?, ?, ?, ?, ?)`,
         [username, email, hashedPassword, 'admin', adminCoins],
@@ -165,8 +185,6 @@ const createAdmin = async () => {
                 console.error(err.message);
             } else {
                 console.log('✅ Admin ready');
-                
-                // 2. อัปเดตเหรียญซ้ำอีกรอบ (กรณีแอดมินมีบัญชีอยู่แล้วในฐานข้อมูล จะได้เหรียญอัปเดตตามด้วย)
                 db.run(`UPDATE users SET coins = ? WHERE username = ?`, [adminCoins, username], (updateErr) => {
                     if (updateErr) console.error("Error updating admin coins:", updateErr.message);
                     else console.log(`🪙 Admin coins updated to ${adminCoins}`);
@@ -175,22 +193,52 @@ const createAdmin = async () => {
         }
     );
 };
+
+// ── Upload Directories ──────────────────────────────────────────
 const bannerUploadDir = path.join(__dirname, 'uploads/banners');
 if (!fs.existsSync(bannerUploadDir)) {
     fs.mkdirSync(bannerUploadDir, { recursive: true });
     console.log('📁 Created directory: uploads/banners');
 }
-// 🛠️ จุดที่ 1: ปรับปรุง Multer ให้เป็นแบบทั่วไปสำหรับแบนเนอร์ 🛠️
+
+const slipUploadDir = path.join(__dirname, 'uploads/slips');
+if (!fs.existsSync(slipUploadDir)) {
+    fs.mkdirSync(slipUploadDir, { recursive: true });
+    console.log('📁 Created directory: uploads/slips');
+}
+
+// Multer สำหรับแบนเนอร์
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        cb(null, bannerUploadDir);// บันทึกไปที่โฟลเดอร์ banners
+        cb(null, bannerUploadDir);
     },
     filename: function (req, file, cb) {
-        // ใช้ชื่อไฟล์เดิม + timestamp เพื่อให้ชื่อไม่ซ้ำ
         cb(null, Date.now() + path.extname(file.originalname)); 
     }
 });
-const uploadBanner = multer({ storage: storage }); // สร้าง instance ใหม่สำหรับแบนเนอร์
+const uploadBanner = multer({ storage: storage });
+
+// Multer สำหรับสลิปโอนเงิน
+const slipStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, slipUploadDir);
+    },
+    filename: function (req, file, cb) {
+        cb(null, 'slip_' + Date.now() + path.extname(file.originalname));
+    }
+});
+const uploadSlip = multer({
+    storage: slipStorage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    fileFilter: (req, file, cb) => {
+        const allowed = /jpeg|jpg|png|gif|webp/;
+        const ext = allowed.test(path.extname(file.originalname).toLowerCase());
+        const mime = allowed.test(file.mimetype);
+        if (ext && mime) cb(null, true);
+        else cb(new Error('อนุญาตเฉพาะไฟล์รูปภาพเท่านั้น'));
+    }
+});
+
 // ================= MIDDLEWARE =================
 
 const verifyToken = (req, res, next) => {
@@ -222,6 +270,7 @@ app.post('/register', async (req, res) => {
     }
     
     const hashedPassword = await bcrypt.hash(password, 10);
+    
     const sql = 'INSERT INTO users (username, email, password) VALUES (?, ?, ?)';
     
     db.run(sql, [username, email, hashedPassword], function (err) {
@@ -259,12 +308,11 @@ app.post('/login', (req, res) => {
     });
 });
 
-// 🔓 กดซื้อตอน (หักเหรียญ + บันทึกลง Database + บันทึกประวัติ)
+// 🔓 กดซื้อตอน
 app.post('/unlock', verifyToken, (req, res) => {
     const userId = req.user.id;
     const { bookId, episodeId, coinCost } = req.body; 
 
-    // 2.1 เช็คก่อนว่าเหรียญพอไหม
     db.get(`SELECT coins FROM users WHERE id = ?`, [userId], (err, user) => {
         if (err || !user) return res.status(500).json({ message: "Error fetching user" });
         
@@ -272,16 +320,13 @@ app.post('/unlock', verifyToken, (req, res) => {
             return res.status(400).json({ message: "เหรียญไม่พอ กรุณาเติมเหรียญก่อนครับ 🪙" });
         }
 
-        // 2.2 ถ้าเหรียญพอ ให้หักเหรียญ
         db.run(`UPDATE users SET coins = coins - ? WHERE id = ?`, [coinCost, userId], function(err) {
             if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการหักเหรียญ" });
 
-            // 2.3 บันทึกประวัติว่าซื้อตอนนี้แล้ว (สิทธิ์การอ่าน)
             db.run(`INSERT OR IGNORE INTO unlocked_episodes (user_id, book_id, episode_id) VALUES (?, ?, ?)`, 
             [userId, bookId, episodeId], function(err) {
                 if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการบันทึกตอน" });
                 
-                // 2.4 บันทึกประวัติการสั่งซื้อ (สำหรับหน้า History)
                 db.get(`SELECT b.title as book_title, e.title as ep_title FROM books b JOIN episodes e ON b.id = e.book_id WHERE b.id = ? AND e.id = ?`, 
                 [bookId, episodeId], (err, row) => {
                     const historyTitle = row ? `${row.book_title} - ${row.ep_title}` : `ปลดล็อกตอน ID: ${episodeId}`;
@@ -296,19 +341,16 @@ app.post('/unlock', verifyToken, (req, res) => {
         });
     });
 });
-// 🔻 เพิ่ม API สำหรับดึง ID หนังสือที่ซื้อไปแล้ว 🔻
+
 app.get('/purchased', verifyToken, (req, res) => {
     const userId = req.user.id;
-    // ค้นหาในตาราง purchased_books ว่า user คนนี้เคยซื้อเล่มไหนไปแล้วบ้าง
     db.all(`SELECT book_id FROM purchased_books WHERE user_id = ?`, [userId], (err, rows) => {
         if (err) return res.status(500).json({ message: "Database error" });
-        
-        // แปลงข้อมูลให้อยู่ในรูป Array ของ ID อย่างเดียว เช่น [1, 2, 5]
         const purchasedIds = rows.map(row => row.book_id);
         res.json(purchasedIds);
     });
 });
-// 1. ดึงข้อมูลแบนเนอร์ทั้งหมด (ใครๆ ก็ดูได้)
+
 app.get('/banners', (req, res) => {
     db.all(`SELECT * FROM banners ORDER BY created_at DESC`, [], (err, rows) => {
         if (err) return res.status(500).json({ message: "Database error" });
@@ -316,35 +358,29 @@ app.get('/banners', (req, res) => {
     });
 });
 
-// 2. เพิ่มแบนเนอร์ใหม่ (Admin เท่านั้น)
 app.post('/banners/add', verifyToken, uploadBanner.single('image'), (req, res) => {
-    // เช็คสิทธิ์แอดมิน (ใช้ req.user.role ที่ได้จาก verifyToken)
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
     
-    // ทางแอดมินจะต้องส่งไฟล์รูปภาพ และข้อมูลอื่นๆ เช่น title, link
     const { title, link } = req.body;
     
     if (!req.file) {
         return res.status(400).json({ message: "กรุณาอัปโหลดรูปภาพ" });
     }
 
-    // เก็บบันทึกเส้นทางไฟล์รูปภาพใน DB (เช่น /uploads/banners/123456789.jpg)
     const imagePath = `/uploads/banners/${req.file.filename}`;
     
     const sql = `INSERT INTO banners (image, title, link) VALUES (?, ?, ?)`;
     db.run(sql, [imagePath, title, link], function (err) {
         if (err) {
-            // ถ้าเกิดข้อผิดพลาดในการบันทึก DB ให้ลบไฟล์รูปภาพที่เพิ่งอัปโหลดออกด้วย
             fs.unlinkSync(req.file.path);
             return res.status(500).json({ message: "Database error" });
         }
         res.json({ id: this.lastID, image: imagePath, title, link, message: "เพิ่มแบนเนอร์สำเร็จ!" });
     });
 });
-// 🛒 Get Cart Items (ดึงของในตะกร้ามานับจำนวน)
+
 app.get('/cart', verifyToken, (req, res) => {
     const userId = req.user.id;
-    // ใช้ JOIN เพื่อดึงข้อมูลจากตาราง books มาแสดงคู่กับ item ในตะกร้า
     const sql = `
         SELECT ci.id AS cart_item_id, b.id AS book_id, b.title, b.image, b.price, b.author
         FROM cart_items ci
@@ -357,22 +393,18 @@ app.get('/cart', verifyToken, (req, res) => {
     });
 });
 
-// ➕ Add to Cart Endpoint
 app.post('/cart/add', verifyToken, (req, res) => {
     const userId = req.user.id;
     const bookId = req.body.book_id || req.body.bookId;
 
-    // 1. เช็คก่อนว่ามีของชิ้นนี้ในตะกร้าหรือยัง
     const checkSql = "SELECT * FROM cart_items WHERE user_id = ? AND book_id = ?";
     db.get(checkSql, [userId, bookId], (err, row) => {
         if (err) return res.status(500).json({ message: "Database error" });
         
         if (row) {
-            // ถ้าเจอข้อมูล แปลว่าซ้ำ
             return res.status(400).json({ message: "หนังสือเล่มนี้อยู่ในตะกร้าแล้ว" });
         }
 
-        // 2. ถ้าไม่ซ้ำ ถึงจะทำการ INSERT
         const insertSql = "INSERT INTO cart_items (user_id, book_id) VALUES (?, ?)";
         db.run(insertSql, [userId, bookId], function(err) {
             if (err) return res.status(500).json({ message: "Error adding to cart" });
@@ -380,23 +412,19 @@ app.post('/cart/add', verifyToken, (req, res) => {
         });
     });
 });
-// 3. ลบแบนเนอร์ (Admin เท่านั้น)
+
 app.delete('/banners/:id', verifyToken, (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
     const bannerId = req.params.id;
 
-    // ต้องดึงข้อมูลเพื่อเอาเส้นทางไฟล์รูปภาพก่อน เพื่อจะไปลบไฟล์จริงออกจากระบบ
     db.get(`SELECT image FROM banners WHERE id = ?`, [bannerId], (err, row) => {
         if (err) return res.status(500).json({ message: "Database error" });
         if (!row) return res.status(404).json({ message: "Banner not found" });
 
-        // ลบข้อมูลออกจาก DB
         db.run(`DELETE FROM banners WHERE id = ?`, [bannerId], (deleteErr) => {
             if (deleteErr) return res.status(500).json({ message: "Database error" });
             
-            // ลบไฟล์รูปภาพจริงออกจากระบบ
             try {
-                // ลบ /uploads... ด้านหน้าออก เพราะ fs.unlink ต้องการเส้นทางจริงในระบบ (relative path)
                 const filePath = `uploads/banners/${row.image.split('/banners/')[1]}`;
                 if (fs.existsSync(filePath)) {
                     fs.unlinkSync(filePath);
@@ -409,7 +437,7 @@ app.delete('/banners/:id', verifyToken, (req, res) => {
         });
     });
 });
-// 🗑️ Delete Cart Item
+
 app.delete('/cart/:id', verifyToken, (req, res) => {
     const userId = req.user.id;
     const cartItemId = req.params.id;
@@ -421,7 +449,6 @@ app.delete('/cart/:id', verifyToken, (req, res) => {
     });
 });
 
-// ➕ Add Book (Admin)
 app.post('/admin/add-book', verifyToken, (req, res) => {
     const { title, author, category, description, image, price } = req.body; 
 
@@ -443,9 +470,7 @@ app.post('/admin/add-book', verifyToken, (req, res) => {
         });
     });
 });
-// ================= จัดการเนื้อหาย่อย (Episodes) =================
 
-// 📖 1. ดึงตอนทั้งหมดของหนังสือเล่มที่เลือก
 app.get('/books/:id/episodes', (req, res) => {
     const sql = `SELECT * FROM episodes WHERE book_id = ? ORDER BY episode_number ASC`;
     db.all(sql, [req.params.id], (err, rows) => {
@@ -454,7 +479,6 @@ app.get('/books/:id/episodes', (req, res) => {
     });
 });
 
-// ➕ 2. เพิ่มตอนใหม่ (Admin Only)
 app.post('/admin/add-episode', verifyToken, (req, res) => {
     if (req.user.role !== 'admin') {
         return res.status(403).json({ message: "Forbidden: Admin only" });
@@ -472,7 +496,6 @@ app.post('/admin/add-episode', verifyToken, (req, res) => {
     });
 });
 
-// 🗑️ 3. ลบตอน (Admin Only)
 app.delete('/admin/delete-episode/:id', verifyToken, (req, res) => {
     if (req.user.role !== 'admin') {
         return res.status(403).json({ message: "Forbidden: Admin only" });
@@ -485,7 +508,6 @@ app.delete('/admin/delete-episode/:id', verifyToken, (req, res) => {
     });
 });
 
-// 👤 Get Profile
 app.get('/profile', verifyToken, (req, res) => {
     const userId = req.user.id;
     const sql = "SELECT id, username, email, role, image, coins FROM users WHERE id = ?";
@@ -503,7 +525,6 @@ app.get('/profile', verifyToken, (req, res) => {
     });
 });
 
-// ✏️ UPDATE USERNAME
 app.put('/profile/username', verifyToken, (req, res) => {
     const userId = req.user.id;
     const { username } = req.body;
@@ -515,7 +536,6 @@ app.put('/profile/username', verifyToken, (req, res) => {
     });
 });
 
-// 🔒 CHANGE PASSWORD
 app.put('/profile/password', verifyToken, async (req, res) => {
     const userId = req.user.id;
     const { oldPassword, newPassword } = req.body;
@@ -532,7 +552,6 @@ app.put('/profile/password', verifyToken, async (req, res) => {
     });
 });
 
-// 🖼️ UPDATE IMAGE
 app.put('/profile/image', verifyToken, (req, res) => {
     const userId = req.user.id;
     const { image } = req.body;
@@ -543,7 +562,6 @@ app.put('/profile/image', verifyToken, (req, res) => {
     });
 });
 
-// 📚 Get All Books (Home.jsx)
 app.get('/books', (req, res) => {
     const sql = `SELECT * FROM books ORDER BY created_at DESC`;
     db.all(sql, [], (err, rows) => {
@@ -551,23 +569,20 @@ app.get('/books', (req, res) => {
         res.json(rows); 
     });
 });
-//ดึงข้อมูลว่า User คนนี้ ปลดล็อกตอนไหนในหนังสือเล่มนี้ไปแล้วบ้าง
+
 app.get('/unlocked/:bookId', verifyToken, (req, res) => {
     const userId = req.user.id;
     const bookId = req.params.bookId;
     
-    // 1️⃣ เช็คก่อนว่า User คนนี้ซื้อ "เหมาเล่ม" ไปแล้วหรือยัง?
     db.get(`SELECT id FROM purchased_books WHERE user_id = ? AND book_id = ?`, [userId, bookId], (err, purchased) => {
         if (err) return res.status(500).json({ message: "Database error" });
 
         if (purchased) {
-            // 🌟 กรณีที่ 1: ซื้อเหมาเล่มไปแล้ว -> ให้ดึง ID ของ "ทุกตอน" ในเล่มนี้ ส่งกลับไปให้เลย (ถือว่าปลดล็อกทั้งหมด)
             db.all(`SELECT id as episode_id FROM episodes WHERE book_id = ?`, [bookId], (err, rows) => {
                 if (err) return res.status(500).json({ message: "Database error" });
                 res.json(rows.map(row => row.episode_id)); 
             });
         } else {
-            // 🌟 กรณีที่ 2: ยังไม่ได้ซื้อเหมาเล่ม -> ไปเช็คว่าเคยซื้อ "แยกตอน" ตอนไหนไว้บ้าง (แบบเดิม)
             db.all(`SELECT episode_id FROM unlocked_episodes WHERE user_id = ? AND book_id = ?`, [userId, bookId], (err, rows) => {
                 if (err) return res.status(500).json({ message: "Database error" });
                 res.json(rows.map(row => row.episode_id)); 
@@ -576,15 +591,11 @@ app.get('/unlocked/:bookId', verifyToken, (req, res) => {
     });
 });
 
-// ➕ เพิ่ม favorite
 app.post('/favorites/add', verifyToken, (req, res) => {
     const userId = req.user.id;
     const bookId = req.body.book_id || req.body.bookId;
 
-    const sql = `
-        INSERT OR IGNORE INTO favorites (user_id, book_id)
-        VALUES (?, ?)
-    `;
+    const sql = `INSERT OR IGNORE INTO favorites (user_id, book_id) VALUES (?, ?)`;
 
     db.run(sql, [userId, bookId], function(err) {
         if (err) return res.status(500).json({ message: "Database error" });
@@ -592,15 +603,11 @@ app.post('/favorites/add', verifyToken, (req, res) => {
     });
 });
 
-// ❌ ลบ favorite
 app.delete('/favorites/remove', verifyToken, (req, res) => {
     const userId = req.user.id;
     const bookId = req.body.book_id || req.body.bookId;
 
-    const sql = `
-        DELETE FROM favorites
-        WHERE user_id = ? AND book_id = ?
-    `;
+    const sql = `DELETE FROM favorites WHERE user_id = ? AND book_id = ?`;
 
     db.run(sql, [userId, bookId], function(err) {
         if (err) return res.status(500).json({ message: "Database error" });
@@ -608,7 +615,6 @@ app.delete('/favorites/remove', verifyToken, (req, res) => {
     });
 });
 
-// 🔁 toggle favorite (แนะนำให้ใช้ตัวนี้)
 app.post('/favorites/toggle', verifyToken, (req, res) => {
     const userId = req.user.id;
     const bookId = req.body.book_id || req.body.bookId;
@@ -620,14 +626,12 @@ app.post('/favorites/toggle', verifyToken, (req, res) => {
             if (err) return res.status(500).json({ message: "Database error" });
 
             if (row) {
-                // ❌ remove
                 db.run(
                     `DELETE FROM favorites WHERE user_id = ? AND book_id = ?`,
                     [userId, bookId],
                     () => res.json({ status: "removed" })
                 );
             } else {
-                // ➕ add
                 db.run(
                     `INSERT INTO favorites (user_id, book_id) VALUES (?, ?)`,
                     [userId, bookId],
@@ -638,7 +642,6 @@ app.post('/favorites/toggle', verifyToken, (req, res) => {
     );
 });
 
-// 🔍 ดึงเฉพาะ ID (ใช้เช็ค fav)
 app.get('/favorites', verifyToken, (req, res) => {
     const userId = req.user.id;
 
@@ -652,7 +655,6 @@ app.get('/favorites', verifyToken, (req, res) => {
     );
 });
 
-// 🔥 ดึง FAVORITES + BOOK (ใช้หน้า Favorites)
 app.get('/favorites/full', verifyToken, (req, res) => {
     const userId = req.user.id;
 
@@ -670,8 +672,6 @@ app.get('/favorites/full', verifyToken, (req, res) => {
     });
 });
 
-
-// 💳 ระบบชำระเงินในตะกร้าด้วยเหรียญ (พร้อมบันทึกประวัติ)
 app.post('/cart/checkout', verifyToken, (req, res) => {
     const userId = req.user.id;
 
@@ -694,11 +694,9 @@ app.post('/cart/checkout', verifyToken, (req, res) => {
                 return res.status(400).json({ message: "เหรียญไม่เพียงพอ" });
             }
 
-            // 1️⃣ หักเหรียญ
             db.run(`UPDATE users SET coins = coins - ? WHERE id = ?`, [totalCost, userId], function(err) {
                 if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการหักเหรียญ" });
 
-                // 2️⃣ บันทึกหนังสือที่ซื้อลง purchased_books (ชั้นหนังสือของผู้ใช้)
                 const placeholders = items.map(() => "(?, ?)").join(",");
                 const values = [];
                 items.forEach(item => values.push(userId, item.book_id));
@@ -706,7 +704,6 @@ app.post('/cart/checkout', verifyToken, (req, res) => {
                 db.run(`INSERT OR IGNORE INTO purchased_books (user_id, book_id) VALUES ${placeholders}`, values, function(err) {
                     if (err) console.error("Error inserting to library:", err);
 
-                    // 3️⃣ บันทึกประวัติการซื้อลง purchase_history (สำหรับหน้า History)
                     const historyPlaceholders = items.map(() => "(?, ?, ?, ?)").join(",");
                     const historyValues = [];
                     items.forEach(item => historyValues.push(userId, item.title, 'book', item.price || 0));
@@ -714,7 +711,6 @@ app.post('/cart/checkout', verifyToken, (req, res) => {
                     db.run(`INSERT INTO purchase_history (user_id, title, type, price) VALUES ${historyPlaceholders}`, historyValues, function(err) {
                         if (err) console.error("Error inserting to purchase_history:", err);
 
-                        // 4️⃣ ลบสินค้าออกจากตะกร้าเมื่อเสร็จสิ้น
                         db.run(`DELETE FROM cart_items WHERE user_id = ?`, [userId], (err) => {
                             if (err) console.error("Clear cart error:", err);
                             
@@ -730,18 +726,16 @@ app.post('/cart/checkout', verifyToken, (req, res) => {
     });
 });
 
-// 📖 API สำหรับเช็คว่าผู้ใช้เป็นเจ้าของหนังสือเล่มไหนบ้าง (ส่งกลับไปแค่ book_id)
 app.get('/library/check', verifyToken, (req, res) => {
     const userId = req.user.id;
 
     db.all(`SELECT book_id FROM purchased_books WHERE user_id = ?`, [userId], (err, rows) => {
         if (err) return res.status(500).json({ message: "Database error" });
-        
-        // ส่งกลับไปเป็น Array ของ book_id เช่น [1, 3, 5] เพื่อง่ายต่อการเช็คใน Frontend
         const purchasedBookIds = rows.map(row => row.book_id);
         res.json(purchasedBookIds);
     });
 });
+
 app.get('/library', verifyToken, (req, res) => {
     const userId = req.user.id;
     const sql = `
@@ -758,12 +752,9 @@ app.get('/library', verifyToken, (req, res) => {
         res.json(rows);
     });
 });
-// 📑 ดึงหนังสือที่ซื้อ "แยกตอน" (แต่ยังไม่ได้ซื้อเหมาเล่ม)
+
 app.get('/library/episodes', verifyToken, (req, res) => {
     const userId = req.user.id;
-    
-    // SQL นี้จะดึงหนังสือที่มีการซื้อตอน (unlocked_episodes)
-    // แต่ "กรองออก" (NOT IN) ถ้าหนังสือนั้นถูกซื้อแบบเหมาเล่ม (purchased_books) ไปแล้ว
     const sql = `
         SELECT 
             b.id,
@@ -789,7 +780,6 @@ app.get('/library/episodes', verifyToken, (req, res) => {
     });
 });
 
-// 🧾 ดึงประวัติการสั่งซื้อ (History)
 app.get('/history', verifyToken, (req, res) => {
     const userId = req.user.id;
     
@@ -805,9 +795,173 @@ app.get('/history', verifyToken, (req, res) => {
         res.json(rows);
     });
 });
- 
+
+// ============================================================
+// 💰 TOPUP API — เติมเหรียญด้วย QR + สลิป
+// ============================================================
+
+// 📤 ส่งคำขอเติมเหรียญพร้อมสลิป
+app.post('/topup/request', verifyToken, uploadSlip.single('slip'), (req, res) => {
+    const userId = req.user.id;
+    const { package_id, coins, bonus, total_coins, amount } = req.body;
+
+    if (!package_id || !coins || !total_coins || !amount) {
+        // ลบไฟล์ถ้า validation fail
+        if (req.file) fs.unlinkSync(req.file.path);
+        return res.status(400).json({ message: "ข้อมูลไม่ครบถ้วน" });
+    }
+
+    const slipPath = req.file ? `/uploads/slips/${req.file.filename}` : null;
+
+    const sql = `
+        INSERT INTO topup_requests 
+        (user_id, package_id, coins, bonus, total_coins, amount, slip_image, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+    `;
+
+    db.run(sql, [userId, package_id, parseInt(coins), parseInt(bonus) || 0, parseInt(total_coins), parseFloat(amount), slipPath], function(err) {
+        if (err) {
+            if (req.file) fs.unlinkSync(req.file.path);
+            return res.status(500).json({ message: "Database error", error: err.message });
+        }
+
+        res.status(201).json({
+            message: "ส่งคำขอเติมเหรียญสำเร็จ! รอการตรวจสอบจากแอดมิน",
+            requestId: this.lastID,
+            status: 'pending'
+        });
+    });
+});
+
+// 📋 ดึงประวัติคำขอเติมเหรียญของตัวเอง
+app.get('/topup/my-requests', verifyToken, (req, res) => {
+    const userId = req.user.id;
+
+    const sql = `
+        SELECT id, package_id, coins, bonus, total_coins, amount, slip_image, status, created_at, approved_at, note
+        FROM topup_requests
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        LIMIT 20
+    `;
+
+    db.all(sql, [userId], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        res.json(rows);
+    });
+});
+
+// 👑 [ADMIN] ดึงคำขอเติมเหรียญทั้งหมด (pending ก่อน)
+app.get('/admin/topup-requests', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
+
+    const status = req.query.status || 'pending';
+
+    const sql = `
+        SELECT tr.*, u.username, u.email
+        FROM topup_requests tr
+        JOIN users u ON tr.user_id = u.id
+        WHERE tr.status = ?
+        ORDER BY tr.created_at DESC
+    `;
+
+    db.all(sql, [status], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        res.json(rows);
+    });
+});
+
+// ✅ [ADMIN] อนุมัติคำขอเติมเหรียญ → เพิ่มเหรียญให้ user ใน DB จริง
+app.post('/admin/topup-approve/:id', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
+
+    const requestId = req.params.id;
+    const adminId = req.user.id;
+    const { note } = req.body;
+
+    // 1. ดึงข้อมูลคำขอ
+    db.get(`SELECT * FROM topup_requests WHERE id = ? AND status = 'pending'`, [requestId], (err, request) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        if (!request) return res.status(404).json({ message: "ไม่พบคำขอ หรือถูกดำเนินการแล้ว" });
+
+        // 2. เพิ่มเหรียญให้ user
+        db.run(`UPDATE users SET coins = coins + ? WHERE id = ?`, [request.total_coins, request.user_id], function(err) {
+            if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการเพิ่มเหรียญ" });
+
+            // 3. อัปเดตสถานะคำขอ
+            db.run(
+                `UPDATE topup_requests SET status = 'approved', approved_at = CURRENT_TIMESTAMP, approved_by = ?, note = ? WHERE id = ?`,
+                [adminId, note || null, requestId],
+                function(err) {
+                    if (err) return res.status(500).json({ message: "Database error" });
+
+                    // 4. บันทึกประวัติ
+                    const title = `เติมเหรียญ ${request.total_coins.toLocaleString()} เหรียญ (฿${request.amount})`;
+                    db.run(
+                        `INSERT INTO purchase_history (user_id, title, type, price) VALUES (?, ?, 'topup', ?)`,
+                        [request.user_id, title, 0],
+                        () => {}
+                    );
+
+                    // 5. ดึงเหรียญปัจจุบันของ user
+                    db.get(`SELECT coins FROM users WHERE id = ?`, [request.user_id], (err, user) => {
+                        res.json({
+                            message: `อนุมัติสำเร็จ! เพิ่ม ${request.total_coins} เหรียญให้ผู้ใช้แล้ว`,
+                            newCoins: user ? user.coins : null
+                        });
+                    });
+                }
+            );
+        });
+    });
+});
+
+// ❌ [ADMIN] ปฏิเสธคำขอเติมเหรียญ
+app.post('/admin/topup-reject/:id', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
+
+    const requestId = req.params.id;
+    const adminId = req.user.id;
+    const { note } = req.body;
+
+    db.run(
+        `UPDATE topup_requests SET status = 'rejected', approved_at = CURRENT_TIMESTAMP, approved_by = ?, note = ? WHERE id = ? AND status = 'pending'`,
+        [adminId, note || 'ปฏิเสธโดยแอดมิน', requestId],
+        function(err) {
+            if (err) return res.status(500).json({ message: "Database error" });
+            if (this.changes === 0) return res.status(404).json({ message: "ไม่พบคำขอ หรือถูกดำเนินการแล้ว" });
+            res.json({ message: "ปฏิเสธคำขอแล้ว" });
+        }
+    );
+});
+
+const promptpay = require('promptpay-qr');
+const qrcode = require('qrcode');
+
+// API สำหรับสร้าง QR Code PromptPay
+app.get('/generate-qr', (req, res) => {
+    const amount = parseFloat(req.query.amount);
+    if (!amount || amount <= 0) {
+        return res.status(400).json({ message: "Invalid amount" });
+    }
+
+    //เลขพร้อมเพย์
+    const mobileNumber = '0839947146'; 
+    const payload = promptpay(mobileNumber, { amount });
+
+    const options = {
+        color: {
+            dark: '#00316d',
+            light: '#ffffff'
+        }
+    };
+
+    qrcode.toDataURL(payload, options, (err, url) => {
+        if (err) return res.status(500).json({ message: "QR Generation Error" });
+        res.json({ qrImage: url });
+    });
+});
 // ================= START SERVER =================
 app.listen(port, () => {
     console.log(`🚀 Server is running on http://localhost:${port}`);
 });
-

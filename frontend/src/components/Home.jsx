@@ -586,7 +586,7 @@ function Home() {
                                                     </div>
                                                 ))}
                                             </div>
-                                            <div className="notif-footer">ดูการแจ้งเตือนทั้งหมด</div>
+                                            <div className="notif-footer" onClick={() => setNotifOpen(false)}>ดูการแจ้งเตือนทั้งหมด</div>
                                         </div>
                                     )}
                                 </div>
