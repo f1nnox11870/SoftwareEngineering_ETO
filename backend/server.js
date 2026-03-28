@@ -5,6 +5,9 @@ const sqlite3 = require('sqlite3').verbose();
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const app = express();
 const port = 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_fallback_secret';
@@ -12,7 +15,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_fallback_secret';
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const db = new sqlite3.Database('./users.db', (err) => {
     if (err) {
         console.error(err.message);
@@ -135,7 +138,14 @@ db.run(`CREATE TABLE IF NOT EXISTS purchase_history (
     if (err) console.error("Error creating purchase_history table:", err);
     else console.log("✅ Table 'purchase_history' is ready.");
 });
-
+// 🛠️ เพิ่มตาราง Banners  🛠️
+db.run(`CREATE TABLE IF NOT EXISTS banners (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image TEXT NOT NULL,
+    title TEXT,
+    link TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 // สร้าง admin
 const createAdmin = async () => {
     const username = 'admin123';
@@ -165,8 +175,22 @@ const createAdmin = async () => {
         }
     );
 };
-
-
+const bannerUploadDir = path.join(__dirname, 'uploads/banners');
+if (!fs.existsSync(bannerUploadDir)) {
+    fs.mkdirSync(bannerUploadDir, { recursive: true });
+    console.log('📁 Created directory: uploads/banners');
+}
+// 🛠️ จุดที่ 1: ปรับปรุง Multer ให้เป็นแบบทั่วไปสำหรับแบนเนอร์ 🛠️
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, bannerUploadDir);// บันทึกไปที่โฟลเดอร์ banners
+    },
+    filename: function (req, file, cb) {
+        // ใช้ชื่อไฟล์เดิม + timestamp เพื่อให้ชื่อไม่ซ้ำ
+        cb(null, Date.now() + path.extname(file.originalname)); 
+    }
+});
+const uploadBanner = multer({ storage: storage }); // สร้าง instance ใหม่สำหรับแบนเนอร์
 // ================= MIDDLEWARE =================
 
 const verifyToken = (req, res, next) => {
@@ -272,7 +296,51 @@ app.post('/unlock', verifyToken, (req, res) => {
         });
     });
 });
+// 🔻 เพิ่ม API สำหรับดึง ID หนังสือที่ซื้อไปแล้ว 🔻
+app.get('/purchased', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    // ค้นหาในตาราง purchased_books ว่า user คนนี้เคยซื้อเล่มไหนไปแล้วบ้าง
+    db.all(`SELECT book_id FROM purchased_books WHERE user_id = ?`, [userId], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        
+        // แปลงข้อมูลให้อยู่ในรูป Array ของ ID อย่างเดียว เช่น [1, 2, 5]
+        const purchasedIds = rows.map(row => row.book_id);
+        res.json(purchasedIds);
+    });
+});
+// 1. ดึงข้อมูลแบนเนอร์ทั้งหมด (ใครๆ ก็ดูได้)
+app.get('/banners', (req, res) => {
+    db.all(`SELECT * FROM banners ORDER BY created_at DESC`, [], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        res.json(rows);
+    });
+});
 
+// 2. เพิ่มแบนเนอร์ใหม่ (Admin เท่านั้น)
+app.post('/banners/add', verifyToken, uploadBanner.single('image'), (req, res) => {
+    // เช็คสิทธิ์แอดมิน (ใช้ req.user.role ที่ได้จาก verifyToken)
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
+    
+    // ทางแอดมินจะต้องส่งไฟล์รูปภาพ และข้อมูลอื่นๆ เช่น title, link
+    const { title, link } = req.body;
+    
+    if (!req.file) {
+        return res.status(400).json({ message: "กรุณาอัปโหลดรูปภาพ" });
+    }
+
+    // เก็บบันทึกเส้นทางไฟล์รูปภาพใน DB (เช่น /uploads/banners/123456789.jpg)
+    const imagePath = `/uploads/banners/${req.file.filename}`;
+    
+    const sql = `INSERT INTO banners (image, title, link) VALUES (?, ?, ?)`;
+    db.run(sql, [imagePath, title, link], function (err) {
+        if (err) {
+            // ถ้าเกิดข้อผิดพลาดในการบันทึก DB ให้ลบไฟล์รูปภาพที่เพิ่งอัปโหลดออกด้วย
+            fs.unlinkSync(req.file.path);
+            return res.status(500).json({ message: "Database error" });
+        }
+        res.json({ id: this.lastID, image: imagePath, title, link, message: "เพิ่มแบนเนอร์สำเร็จ!" });
+    });
+});
 // 🛒 Get Cart Items (ดึงของในตะกร้ามานับจำนวน)
 app.get('/cart', verifyToken, (req, res) => {
     const userId = req.user.id;
@@ -309,6 +377,35 @@ app.post('/cart/add', verifyToken, (req, res) => {
         db.run(insertSql, [userId, bookId], function(err) {
             if (err) return res.status(500).json({ message: "Error adding to cart" });
             res.status(201).json({ message: "เพิ่มลงตะกร้าเรียบร้อย" });
+        });
+    });
+});
+// 3. ลบแบนเนอร์ (Admin เท่านั้น)
+app.delete('/banners/:id', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
+    const bannerId = req.params.id;
+
+    // ต้องดึงข้อมูลเพื่อเอาเส้นทางไฟล์รูปภาพก่อน เพื่อจะไปลบไฟล์จริงออกจากระบบ
+    db.get(`SELECT image FROM banners WHERE id = ?`, [bannerId], (err, row) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        if (!row) return res.status(404).json({ message: "Banner not found" });
+
+        // ลบข้อมูลออกจาก DB
+        db.run(`DELETE FROM banners WHERE id = ?`, [bannerId], (deleteErr) => {
+            if (deleteErr) return res.status(500).json({ message: "Database error" });
+            
+            // ลบไฟล์รูปภาพจริงออกจากระบบ
+            try {
+                // ลบ /uploads... ด้านหน้าออก เพราะ fs.unlink ต้องการเส้นทางจริงในระบบ (relative path)
+                const filePath = `uploads/banners/${row.image.split('/banners/')[1]}`;
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+            } catch (unlinkErr) {
+                console.error("Error deleting banner file:", unlinkErr);
+            }
+            
+            res.json({ message: "ลบแบนเนอร์สำเร็จ!" });
         });
     });
 });
@@ -459,10 +556,23 @@ app.get('/unlocked/:bookId', verifyToken, (req, res) => {
     const userId = req.user.id;
     const bookId = req.params.bookId;
     
-    db.all(`SELECT episode_id FROM unlocked_episodes WHERE user_id = ? AND book_id = ?`, [userId, bookId], (err, rows) => {
+    // 1️⃣ เช็คก่อนว่า User คนนี้ซื้อ "เหมาเล่ม" ไปแล้วหรือยัง?
+    db.get(`SELECT id FROM purchased_books WHERE user_id = ? AND book_id = ?`, [userId, bookId], (err, purchased) => {
         if (err) return res.status(500).json({ message: "Database error" });
-        // ส่งกลับไปเป็น Array ของ ID ตอนที่ปลดล็อกแล้ว เช่น [12, 13, 15]
-        res.json(rows.map(row => row.episode_id)); 
+
+        if (purchased) {
+            // 🌟 กรณีที่ 1: ซื้อเหมาเล่มไปแล้ว -> ให้ดึง ID ของ "ทุกตอน" ในเล่มนี้ ส่งกลับไปให้เลย (ถือว่าปลดล็อกทั้งหมด)
+            db.all(`SELECT id as episode_id FROM episodes WHERE book_id = ?`, [bookId], (err, rows) => {
+                if (err) return res.status(500).json({ message: "Database error" });
+                res.json(rows.map(row => row.episode_id)); 
+            });
+        } else {
+            // 🌟 กรณีที่ 2: ยังไม่ได้ซื้อเหมาเล่ม -> ไปเช็คว่าเคยซื้อ "แยกตอน" ตอนไหนไว้บ้าง (แบบเดิม)
+            db.all(`SELECT episode_id FROM unlocked_episodes WHERE user_id = ? AND book_id = ?`, [userId, bookId], (err, rows) => {
+                if (err) return res.status(500).json({ message: "Database error" });
+                res.json(rows.map(row => row.episode_id)); 
+            });
+        }
     });
 });
 
@@ -632,10 +742,28 @@ app.get('/library/check', verifyToken, (req, res) => {
         res.json(purchasedBookIds);
     });
 });
-//Library ดึงหนังสือ จากข้อมูลทั้งหมด
 app.get('/library', verifyToken, (req, res) => {
     const userId = req.user.id;
- 
+    const sql = `
+        SELECT 
+            b.id, b.title, b.author, b.category, b.description, 
+            b.image, b.price, b.likes, pb.purchased_at
+        FROM purchased_books pb
+        JOIN books b ON pb.book_id = b.id
+        WHERE pb.user_id = ?
+        ORDER BY pb.purchased_at DESC
+    `;
+    db.all(sql, [userId], (err, rows) => {
+        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+        res.json(rows);
+    });
+});
+// 📑 ดึงหนังสือที่ซื้อ "แยกตอน" (แต่ยังไม่ได้ซื้อเหมาเล่ม)
+app.get('/library/episodes', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    
+    // SQL นี้จะดึงหนังสือที่มีการซื้อตอน (unlocked_episodes)
+    // แต่ "กรองออก" (NOT IN) ถ้าหนังสือนั้นถูกซื้อแบบเหมาเล่ม (purchased_books) ไปแล้ว
     const sql = `
         SELECT 
             b.id,
@@ -646,14 +774,16 @@ app.get('/library', verifyToken, (req, res) => {
             b.image,
             b.price,
             b.likes,
-            pb.purchased_at
-        FROM purchased_books pb
-        JOIN books b ON pb.book_id = b.id
-        WHERE pb.user_id = ?
-        ORDER BY pb.purchased_at DESC
+            MAX(ue.unlocked_at) as purchased_at
+        FROM unlocked_episodes ue
+        JOIN books b ON ue.book_id = b.id
+        WHERE ue.user_id = ? 
+        AND b.id NOT IN (SELECT book_id FROM purchased_books WHERE user_id = ?)
+        GROUP BY b.id
+        ORDER BY purchased_at DESC
     `;
  
-    db.all(sql, [userId], (err, rows) => {
+    db.all(sql, [userId, userId], (err, rows) => {
         if (err) return res.status(500).json({ message: 'Database error', error: err.message });
         res.json(rows);
     });

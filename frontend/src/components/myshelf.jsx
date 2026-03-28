@@ -50,6 +50,10 @@ function MyShelf() {
     const [search, setSearch]     = useState('');
     const [filterCat, setFilterCat] = useState('ทั้งหมด');
     const [categories, setCategories] = useState(['ทั้งหมด']);
+    // 🔻 แยก State สำหรับหนังสือทั้ง 2 แบบ และ State ของ Tab ที่กำลังเลือก
+    const [fullBooks, setFullBooks] = useState([]);
+    const [partialBooks, setPartialBooks] = useState([]);
+    const [activeTab, setActiveTab] = useState('FULL'); // 'FULL' = เหมาเล่ม, 'PARTIAL' = รายตอน
 
     const megaRef    = useRef(null);
     const profileRef = useRef(null);
@@ -59,6 +63,36 @@ function MyShelf() {
     // ══════════════════════════════════════════
     //  Fetch: หนังสือในชั้น
     // ══════════════════════════════════════════
+    const fetchLibrary = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        setLoading(true); // 🔻 1. สั่งเปิดโหลดตอนเริ่มดึงข้อมูล
+        
+        try {
+            // 1. ดึงหนังสือเหมาเล่ม
+            const resFull = await axios.get('http://localhost:3001/library', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setFullBooks(resFull.data);
+
+            // 2. ดึงหนังสือซื้อแยกตอน
+            const resPartial = await axios.get('http://localhost:3001/library/episodes', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setPartialBooks(resPartial.data);
+            
+        } catch (error) {
+            console.error("Error fetching library:", error);
+        } finally {
+            setLoading(false); // 🔻 2. สำคัญมาก! ดึงเสร็จแล้วต้องสั่งปิดโหลดตรงนี้ 🔻
+        }
+    };
+
+    // ใช้ useEffect ตัวเดิม แต่เรียก fetchLibrary() ที่เราเพิ่งอัปเดต
+    useEffect(() => {
+        fetchLibrary();
+    }, []);
     const fetchShelf = async () => {
         const token = localStorage.getItem('token');
         if (!token) return;
@@ -132,7 +166,7 @@ function MyShelf() {
             setIsLoggedIn(true);
             if (user) setUsername(user);
             if (savedRole) setRole(savedRole);
-            fetchShelf();
+            fetchLibrary();
             fetchCartCount();
         } else {
             navigate('/');
@@ -170,17 +204,21 @@ function MyShelf() {
     };
 
     // ── ฟิลเตอร์หนังสือ ──
-    const filteredBooks = books.filter(b => {
+    // ── 1. เลือกหนังสือตาม Tab ──
+    const displayBooks = activeTab === 'FULL' ? fullBooks : partialBooks;
+
+    // ── 2. ฟิลเตอร์หนังสือจาก Tab นั้นๆ ──
+    const filteredBooks = displayBooks.filter(b => {
         const matchSearch = b.title?.toLowerCase().includes(search.toLowerCase()) ||
                             b.author?.toLowerCase().includes(search.toLowerCase());
         const matchCat    = filterCat === 'ทั้งหมด' || b.category === filterCat;
         return matchSearch && matchCat;
     });
 
-    // ── นับ stats ──
-    const totalBooks    = books.length;
-    const totalCoinsSpent = books.reduce((sum, b) => sum + (b.price || 0), 0);
-    const uniqueCats    = new Set(books.map(b => b.category).filter(Boolean)).size;
+    // ── 3. นับ stats ──
+    const totalBooks    = displayBooks.length;
+    const totalCoinsSpent = displayBooks.reduce((sum, b) => sum + (b.price || 0), 0);
+    const uniqueCats    = new Set(displayBooks.map(b => b.category).filter(Boolean)).size;
 
     return (
         <div className="shelf-page">
@@ -450,7 +488,29 @@ function MyShelf() {
                         </div>
                     </div>
                 </div>
-
+                {/* 🔻 เพิ่มปุ่ม Tab ตรงนี้เลยครับ 🔻 */}
+                <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', marginTop: '20px' }}>
+                    <button 
+                        onClick={() => setActiveTab('FULL')}
+                        style={{ 
+                            padding: '10px 20px', borderRadius: '20px', border: 'none', 
+                            background: activeTab === 'FULL' ? '#ff4e63' : '#eee', 
+                            color: activeTab === 'FULL' ? '#fff' : '#555', 
+                            cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.3s'
+                        }}>
+                        📚 ซื้อแบบเหมาเล่ม ({fullBooks.length})
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('PARTIAL')}
+                        style={{ 
+                            padding: '10px 20px', borderRadius: '20px', border: 'none', 
+                            background: activeTab === 'PARTIAL' ? '#ff4e63' : '#eee', 
+                            color: activeTab === 'PARTIAL' ? '#fff' : '#555', 
+                            cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.3s'
+                        }}>
+                        📑 ซื้อแบบแยกตอน ({partialBooks.length})
+                    </button>
+                </div>
                 {/* ── Content ── */}
                 {loading ? (
                     <div className="shelf-loading">
@@ -460,24 +520,80 @@ function MyShelf() {
                 ) : filteredBooks.length === 0 ? (
                     <div className="shelf-empty">
                         <div className="shelf-empty-icon">📚</div>
-                        {books.length === 0 ? (
-                            <>
-                                <p>ยังไม่มีหนังสือในชั้น ไปเลือกซื้อกันเลย!</p>
-                                <button className="shelf-empty-btn" onClick={() => navigate('/')}>
-                                    <i className="fas fa-store" style={{ marginRight: '8px' }}></i>
-                                    ไปเลือกซื้อหนังสือ
-                                </button>
-                            </>
-                        ) : (
-                            <p>ไม่พบหนังสือที่ค้นหา ลองเปลี่ยนคำค้นหาดูนะ</p>
-                        )}
+                        {/* 🔻 1. ปุ่มสลับ Tab (วางไว้เหนือส่วนที่แสดงหนังสือ) 🔻 */}
+                <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', marginTop: '10px' }}>
+                    <button 
+                        onClick={() => setActiveTab('FULL')}
+                        style={{ 
+                            padding: '10px 20px', borderRadius: '20px', border: 'none', 
+                            background: activeTab === 'FULL' ? '#ff4e63' : '#eee', 
+                            color: activeTab === 'FULL' ? '#fff' : '#555', 
+                            cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.3s'
+                        }}>
+                        📚 ซื้อแบบเหมาเล่ม ({fullBooks.length})
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('PARTIAL')}
+                        style={{ 
+                            padding: '10px 20px', borderRadius: '20px', border: 'none', 
+                            background: activeTab === 'PARTIAL' ? '#ff4e63' : '#eee', 
+                            color: activeTab === 'PARTIAL' ? '#fff' : '#555', 
+                            cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.3s'
+                        }}>
+                        📑 ซื้อแบบแยกตอน ({partialBooks.length})
+                    </button>
+                </div>
+
+                {/* 🔻 2. ส่วนแสดงหนังสือตาม Tab ที่เลือก 🔻 */}
+                {(() => {
+                    const displayBooks = activeTab === 'FULL' ? fullBooks : partialBooks;
+
+                    return (
+                        <>
+                            {displayBooks.length === 0 ? (
+                                <div className="empty-shelf" style={{ textAlign: 'center', padding: '50px' }}>
+                                    <i className="fas fa-book-open" style={{ fontSize: '40px', color: '#ccc' }}></i>
+                                    <p style={{ marginTop: '10px', color: '#888' }}>คุณยังไม่มีหนังสือในหมวดหมู่นี้</p>
+                                </div>
+                            ) : (
+                                viewMode === 'grid' ? (
+                                    <div className="shelf-grid">
+                                        {displayBooks.map(book => (
+                                            /* 🌟 โค้ด Card แบบ Grid เดิมของคุณ เอามาใส่ตรงนี้ได้เลย 🌟 */
+                                            <div key={book.id} className="shelf-card" onClick={() => navigate(`/read/${book.id}`)}>
+                                                <img src={book.image ? `http://localhost:3001${book.image}` : 'https://via.placeholder.com/175x260?text=No+Cover'} alt={book.title} />
+                                                <div className="shelf-info">
+                                                    <h3 className="shelf-title">{book.title}</h3>
+                                                    {/* ใส่ส่วนอื่นๆ ของการ์ดเดิมที่คุณมีต่อได้เลย... */}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="shelf-list-view">
+                                        {displayBooks.map(book => (
+                                            /* 🌟 โค้ด Card แบบ List เดิมของคุณ เอามาใส่ตรงนี้ได้เลย 🌟 */
+                                            <div key={book.id} className="shelf-list-item" onClick={() => navigate(`/read/${book.id}`)}>
+                                                <img className="shelf-list-cover" src={book.image ? `http://localhost:3001${book.image}` : 'https://via.placeholder.com/65x90?text=N/A'} alt={book.title} />
+                                                <div className="shelf-list-details">
+                                                    <h3 className="shelf-list-title">{book.title}</h3>
+                                                    {/* ใส่ส่วนอื่นๆ ของการ์ดเดิมที่คุณมีต่อได้เลย... */}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )
+                            )}
+                        </>
+                    );
+                })()}
                     </div>
                 ) : viewMode === 'grid' ? (
                     /* ════ GRID VIEW ════ */
                     <div className="shelf-grid">
                         {filteredBooks.map(book => (
                             <div key={book.id} className="shelf-book-card"
-                                onClick={() => navigate(`/book/${book.id}`)}>
+                                onClick={() => navigate(`/read/${book.id}`)}>
                                 <div className="shelf-book-cover-wrap">
                                     <img
                                         src={book.image || 'https://via.placeholder.com/175x260?text=No+Cover'}
@@ -489,7 +605,7 @@ function MyShelf() {
                                     )}
                                     <div className="shelf-book-overlay">
                                         <button className="shelf-read-btn"
-                                            onClick={e => { e.stopPropagation(); navigate(`/book/${book.id}`); }}>
+                                            onClick={e => { e.stopPropagation(); navigate(`/read/${book.id}`); }}>
                                             <i className="fas fa-book-open"></i> อ่านเลย
                                         </button>
                                     </div>
@@ -512,7 +628,7 @@ function MyShelf() {
                     <div className="shelf-list">
                         {filteredBooks.map(book => (
                             <div key={book.id} className="shelf-list-item"
-                                onClick={() => navigate(`/book/${book.id}`)}>
+                                onClick={() => navigate(`/read/${book.id}`)}>
                                 <img
                                     className="shelf-list-cover"
                                     src={book.image || 'https://via.placeholder.com/65x90?text=N/A'}
@@ -539,7 +655,7 @@ function MyShelf() {
                                     ซื้อเมื่อ {formatDate(book.purchased_at)}
                                 </span>
                                 <button className="shelf-list-read-btn"
-                                    onClick={e => { e.stopPropagation(); navigate(`/book/${book.id}`); }}>
+                                    onClick={e => { e.stopPropagation(); navigate(`/read/${book.id}`); }}>
                                     <i className="fas fa-book-open"></i> อ่านเลย
                                 </button>
                             </div>

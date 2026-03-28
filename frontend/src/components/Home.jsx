@@ -35,7 +35,7 @@ const BANNERS = [
 ];
 
 // ── BookCard ──────────────────────────────────────────
-function BookCard({ book, isLoggedIn, onView, onAddToCart , isFavorite}) {
+function BookCard({ book, isLoggedIn, onView, onAddToCart, isFavorite, isPurchased }) {
     const [fav, setFav] = useState(isFavorite || false);
     useEffect(() => {
         setFav(isFavorite);
@@ -102,11 +102,21 @@ function BookCard({ book, isLoggedIn, onView, onAddToCart , isFavorite}) {
 
                 <div className="bcard-info">
                     <div className="bcard-price-row" style={{ justifyContent: 'center', width: '100%' }}>
-                        {isLoggedIn && (
+                        
+                        {/* 🔻 ตรงนี้ต้องใช้คำว่า isPurchased (ห้ามมี s และห้ามมี .includes) 🔻 */}
+                        {isLoggedIn && !isPurchased && (
                             <button className="bcard-cart" onClick={e => { e.stopPropagation(); onAddToCart(book.id); }} style={{ width: '40px', height: '40px', borderRadius: '50%' }}>
                                 <i className="fas fa-shopping-cart"></i>
                             </button>
                         )}
+                        
+                        {/* 🌟 ถ้าซื้อแล้ว ให้ขึ้นไอคอนหนังสือให้อ่านแทน 🌟 */}
+                        {isLoggedIn && isPurchased && (
+                            <div style={{ color: '#4caf50', fontSize: '18px', fontWeight: 'bold' }}>
+                                <i className="fas fa-book-open"></i> ซื้อแล้ว
+                            </div>
+                        )}
+
                     </div>
                 </div>
             </div>
@@ -155,7 +165,7 @@ function BookCard({ book, isLoggedIn, onView, onAddToCart , isFavorite}) {
 
 // ── BookRow ───────────────────────────────────────────
 // 🔻 1. เพิ่ม favoriteIds เข้าไปในวงเล็บ 🔻
-function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView, onAddToCart, favoriteIds = [] }) {
+function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView, onAddToCart, favoriteIds = [], purchasedIds = [] }) {
     const rowRef = useRef(null);
     const scroll = (dir) => {
         if (rowRef.current) rowRef.current.scrollBy({ left: dir * 700, behavior: 'smooth' });
@@ -182,6 +192,7 @@ function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView, onAddToC
                             onView={onView} 
                             onAddToCart={onAddToCart}
                             isFavorite={favoriteIds.includes(book.id)} /* 👈 ใช้ favoriteIds ตรงนี้ได้แล้ว! */
+                            isPurchased={purchasedIds.some(id => Number(id) === Number(book.id)) || (typeof purchasedBooks !== 'undefined' && purchasedBooks.some(id => Number(id) === Number(book.id)))}
                         />
                     ))}
                 </div>
@@ -196,13 +207,29 @@ function BookRow({ title, books, isLoggedIn, showSeeAll = true, onView, onAddToC
 // ── Home ──────────────────────────────────────────────
 function Home() {
     const navigate = useNavigate();
-    
+    const [banners, setBanners] = useState([]);
+    const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+
+    const [purchasedIds, setPurchasedIds] = useState([]);
     // State สำหรับข้อมูลหนังสือและหน้าต่าง View
     const [books, setBooks] = useState([]);
     const [viewBook, setViewBook] = useState(null); // เก็บหนังสือที่ถูกกด View
     const [cartCount, setCartCount] = useState(0);
     const [favoriteIds, setFavoriteIds] = useState([]);
     const [purchasedBooks, setPurchasedBooks] = useState([]);
+
+    const fetchPurchasedIds = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        try {
+            const res = await axios.get('http://localhost:3001/purchased', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setPurchasedIds(res.data); // data จะมาเป็น array ของ book_id เช่น [1, 5, 12]
+        } catch (error) {
+            console.error("Error fetching purchased books:", error);
+        }
+    };
     const fetchFavoriteIds = async () => {
         const token = localStorage.getItem('token');
         if (!token) return;
@@ -219,11 +246,29 @@ function Home() {
         }
     };
     useEffect(() => {
+        if (banners.length <= 1) return; // ถ้ามีรูปเดียวไม่ต้องเลื่อน
+        const interval = setInterval(() => {
+            setCurrentBannerIndex(prev => (prev + 1) % banners.length);
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [banners.length]);
+
+    // 2. ฟังก์ชันกดปุ่มเลื่อนไปทางขวา
+    const nextBanner = () => {
+        setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
+    };
+
+    // 3. ฟังก์ชันกดปุ่มเลื่อนไปทางซ้าย
+    const prevBanner = () => {
+        setCurrentBannerIndex((prev) => (prev === 0 ? banners.length - 1 : prev - 1));
+    };
+    // 🔺 สิ้นสุดโค้ด Slider 🔺
+    useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
         // 1. ดึงข้อมูลรายการโปรด (หัวใจ)
         fetchFavoriteIds(); 
-        
+        fetchPurchasedIds();
         // 2. ดึงข้อมูล "หนังสือที่ซื้อเป็นเจ้าของแล้ว" (คนละส่วนกัน)
         axios.get('http://localhost:3001/library/check', {
             headers: { Authorization: `Bearer ${token}` }
@@ -233,6 +278,14 @@ function Home() {
             if (Array.isArray(res.data)) setPurchasedBooks(res.data);
         })
         .catch(err => console.log("Error fetching library:", err));
+        const handleFocus = () => {
+            if (token) fetchPurchasedIds();
+        };
+        window.addEventListener('focus', handleFocus);
+
+        return () => {
+            window.removeEventListener('focus', handleFocus);
+        };
     }
 }, []);
     const fetchCartCount = async () => {
@@ -331,6 +384,7 @@ function Home() {
             }
         };
         fetchBooks();
+        fetchBanners();
     }, []);
 
     useEffect(() => {
@@ -396,7 +450,14 @@ function Home() {
     const unreadCount = notifications.filter(n => n.unread).length;
     const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
     const markOneRead = (id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
-
+    const fetchBanners = async () => {
+        try {
+            const res = await axios.get('http://localhost:3001/banners'); // ดึงข้อมูลแบนเนอร์จาก API ที่เพิ่งสร้าง
+            setBanners(res.data); // เอาแบนเนอร์ไปใส่ใน State
+        } catch (error) {
+            console.error("Error fetching banners:", error);
+        }
+    };
     const handleLogout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('username');
@@ -619,48 +680,84 @@ function Home() {
                 </div>
             </div>
 
-            {/* ══ HERO BANNER ══ */}
-            <section className="banner-section">
-                <div className="banner-viewport">
-                    <button
-                        className="banner-arrow left"
-                        onClick={() => goSlide(bannerIdx - 1)}
-                        disabled={bannerIdx === 0}
-                    >
-                        <i className="fas fa-chevron-left"></i>
-                    </button>
+            {/* ══ BANNER MULTI-SLIDER (โชว์ทีละ 4 รูป) ══ */}
+            <section className="banner-wrap" style={{ 
+                width: '95%', maxWidth: '1400px', margin: '20px auto', maxHeight: '250px', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                position: 'relative' // สำคัญ! เพื่อให้ปุ่มลอยอยู่ด้านข้าง
+            }}>
+                
+                {banners.length > 0 ? (
+                    <>
+                        {/* 🌟 1. ส่วนแสดงรูปภาพ (คำนวณให้โชว์ 4 รูปพร้อมกัน) */}
+                        <div style={{ 
+                            display: 'flex', gap: '15px', width: '100%', height: '220px', 
+                            overflow: 'hidden', padding: '10px' 
+                        }}>
+                            {/* สร้าง Array ความยาวสูงสุด 4 ช่อง เพื่อดึงรูปมาแสดง */}
+                            {Array.from({ length: Math.min(4, banners.length) }).map((_, idx) => {
+                                // คำนวณ Index ให้วนลูปกลับไปรูปแรกถ้าเลื่อนจนสุด
+                                const bannerIdx = (currentBannerIndex + idx) % banners.length;
+                                const banner = banners[bannerIdx];
 
-                    <div className="banner-track" ref={bannerRef}>
-                        {BANNERS.map((b, i) => (
-                            <div
-                                key={i}
-                                className="banner-slide"
-                                style={{ background: b.bg }}
-                            >
-                                <i className="fas fa-image"></i>
-                                <span>{b.label}</span>
-                            </div>
-                        ))}
+                                return (
+                                    <div key={`${banner.id}-${idx}`} style={{ 
+                                        flex: 1, // ให้ทุกรูปแบ่งพื้นที่เท่าๆ กัน (ถ้ามี 4 รูปก็รูปละ 25%)
+                                        height: '100%', borderRadius: '8px', overflow: 'hidden',
+                                        boxShadow: '0 3px 6px rgba(0,0,0,0.15)',
+                                        transition: 'transform 0.3s ease'
+                                    }}>
+                                        {banner.link ? (
+                                            <a href={banner.link} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: '100%', height: '100%' }}>
+                                                <img 
+                                                    src={`http://localhost:3001${banner.image}`} 
+                                                    alt={banner.title || 'Banner'} 
+                                                    style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} 
+                                                />
+                                            </a>
+                                        ) : (
+                                            <img 
+                                                src={`http://localhost:3001${banner.image}`} 
+                                                alt={banner.title || 'Banner'} 
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} 
+                                            />
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* 🌟 2. ปุ่มกด ซ้าย-ขวา (โชว์เมื่อมีรูปมากกว่า 4 รูป หรืออยากให้เลื่อนวน) */}
+                        {banners.length > 1 && (
+                            <>
+                                <button onClick={prevBanner} style={{
+                                    position: 'absolute', left: '-15px', top: '50%', transform: 'translateY(-50%)',
+                                    background: '#fff', border: '1px solid #ddd', borderRadius: '50%',
+                                    width: '45px', height: '45px', cursor: 'pointer', fontSize: '18px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+                                    zIndex: 2, color: '#ff4e63'
+                                }}>
+                                    <i className="fas fa-chevron-left"></i>
+                                </button>
+                                
+                                <button onClick={nextBanner} style={{
+                                    position: 'absolute', right: '-15px', top: '50%', transform: 'translateY(-50%)',
+                                    background: '#fff', border: '1px solid #ddd', borderRadius: '50%',
+                                    width: '45px', height: '45px', cursor: 'pointer', fontSize: '18px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+                                    zIndex: 2, color: '#ff4e63'
+                                }}>
+                                    <i className="fas fa-chevron-right"></i>
+                                </button>
+                            </>
+                        )}
+                    </>
+                ) : (
+                    // ถ้าไม่มีแบนเนอร์
+                    <div className="banner-img-placeholder" style={{ width: '100%', height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#eee', color: '#888', borderRadius: '12px' }}>
+                        Welcome to ETOEBOOK.com | เว็บนิยาย มังงะ ไลท์โนเวล
                     </div>
-
-                    <button
-                        className="banner-arrow right"
-                        onClick={() => goSlide(bannerIdx + 1)}
-                        disabled={bannerIdx >= BANNERS.length - 1}
-                    >
-                        <i className="fas fa-chevron-right"></i>
-                    </button>
-                </div>
-
-                <div className="banner-dots">
-                    {BANNERS.map((_, i) => (
-                        <span
-                            key={i}
-                            className={`bdot ${i === bannerIdx ? 'active' : ''}`}
-                            onClick={() => goSlide(i)}
-                        />
-                    ))}
-                </div>
+                )}
             </section>
 
             {/* ══ BOOK ROWS (ส่ง onView เข้าไปด้วย) ══ */}
@@ -671,6 +768,7 @@ function Home() {
                 onView={setViewBook} 
                 onAddToCart={addToCart}
                 favoriteIds={favoriteIds} /* 👈 เพิ่มบรรทัดนี้ */
+                purchasedIds={purchasedIds}
             />
             
             <BookRow 
@@ -680,6 +778,7 @@ function Home() {
                 onView={setViewBook} 
                 onAddToCart={addToCart}
                 favoriteIds={favoriteIds} /* 👈 เพิ่มบรรทัดนี้ */
+                purchasedIds={purchasedIds}
             />
             
             {books.length === 0 && (
@@ -752,30 +851,31 @@ function Home() {
                                 </button>
                             ) : (
                                 <>
-                                    {isLoggedIn && (
-                                        <button 
-                                            onClick={() => addToCart(viewBook.id)}
-                                            style={{ 
-                                                flex: 1, padding: '12px', 
-                                                background: '#ff4e63', color: '#fff', 
-                                                border: 'none', borderRadius: '6px', 
-                                                cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' 
-                                            }}>
-                                            <i className="fas fa-shopping-cart"></i> เพิ่มลงตะกร้า
-                                        </button>
-                                    )}
-                                    <button 
-                                        onClick={() => navigate(`/read/${viewBook.id}`)}
-                                        style={{ 
-                                            flex: isLoggedIn ? 1 : 'none', 
-                                            width: isLoggedIn ? 'auto' : '100%', 
-                                            padding: '12px', background: '#f5f5f5', 
-                                            color: '#333', border: '1px solid #ddd', 
-                                            borderRadius: '6px', cursor: 'pointer', 
-                                            fontWeight: 'bold', fontSize: '15px' 
-                                        }}>
-                                        📖 ทดลองอ่าน
-                                    </button>
+                                    {isLoggedIn && !purchasedIds.some(id => Number(id) === Number(viewBook.id)) && !purchasedBooks.some(id => Number(id) === Number(viewBook.id)) && (
+                                <button 
+                                    onClick={() => addToCart(viewBook.id)}
+                                    style={{ 
+                                        flex: 1, padding: '12px', background: '#ff4e63', 
+                                        color: '#fff', border: 'none', borderRadius: '6px', 
+                                        cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' 
+                                    }}>
+                                    <i className="fas fa-shopping-cart"></i> เพิ่มลงตะกร้า
+                                </button>
+                            )}
+
+                            {/* ปุ่มอ่าน: ถ้าซื้อแล้วปุ่มจะขยายเต็ม และเปลี่ยนคำเป็น "อ่านเลย" */}
+                            <button 
+                                onClick={() => navigate(`/read/${viewBook.id}`)}
+                                style={{ 
+                                    flex: (isLoggedIn && !purchasedIds.some(id => Number(id) === Number(viewBook.id)) && !purchasedBooks.some(id => Number(id) === Number(viewBook.id))) ? 1 : 'none', 
+                                    width: (isLoggedIn && !purchasedIds.some(id => Number(id) === Number(viewBook.id)) && !purchasedBooks.some(id => Number(id) === Number(viewBook.id))) ? 'auto' : '100%', 
+                                    padding: '12px', background: '#f5f5f5', 
+                                    color: '#333', border: '1px solid #ddd', 
+                                    borderRadius: '6px', cursor: 'pointer', 
+                                    fontWeight: 'bold', fontSize: '15px' 
+                                }}>
+                                {(purchasedIds.some(id => Number(id) === Number(viewBook.id)) || purchasedBooks.some(id => Number(id) === Number(viewBook.id))) ? '📖 อ่านเลย' : '📖 ทดลองอ่าน'}
+                            </button>
                                 </>
                             )}
                         </div>

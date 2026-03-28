@@ -29,8 +29,13 @@ function Admin() {
   // ดึงข้อมูลหนังสือที่ถูกเลือกมาดูว่าหมวดหมู่อะไร
   const selectedBook = books.find(b => b.id.toString() === selectedBookId.toString());
   const isManga = selectedBook?.category === "มังงะ";
-
+    // 🛠️เพิ่ม State สำหรับแบนเนอร์ 🛠️
+  const [banners, setBanners] = useState([]);
+  const [newBannerImage, setNewBannerImage] = useState(null);
   // ================= EFFECTS =================
+  useEffect(() => {
+        fetchBanners(); // ดึงข้อมูลแบนเนอร์
+    }, []);
   useEffect(() => {
     const role = localStorage.getItem("role");
     if (role !== "admin") {
@@ -106,7 +111,68 @@ function Admin() {
   const removeEpImage = (indexToRemove) => {
     setEpImages(prev => prev.filter((_, index) => index !== indexToRemove));
   };
+  // 🛠️ จุดที่ 4.1: ฟังก์ชันดึงแบนเนอร์ 🛠️
+    const fetchBanners = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        try {
+            const res = await axios.get('http://localhost:3001/banners'); // ใครก็ดึงได้ ไม่ต้องส่ง token
+            setBanners(res.data);
+        } catch (error) {
+            console.error("Error fetching banners:", error);
+        }
+    };
 
+    // 🛠️ จุดที่ 4.2: ฟังก์ชันสำหรับแอดแบนเนอร์ 🛠️
+    const handleAddBanner = async (e) => {
+        e.preventDefault();
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        if (!newBannerImage) {
+            alert("กรุณาเลือกรูปภาพแบนเนอร์ครับ");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('image', newBannerImage);
+        // formData.append('title', newBannerTitle);
+        // formData.append('link', newBannerLink);
+
+        try {
+            await axios.post('http://localhost:3001/banners/add', formData, {
+                headers: { 
+                    'Content-Type': 'multipart/form-data',
+                    Authorization: `Bearer ${token}` 
+                }
+            });
+            alert("เพิ่มแบนเนอร์สำเร็จ!");
+            setNewBannerImage(null); // ล้างไฟล์รูปภาพใน input
+            fetchBanners(); // โหลดรายการแบนเนอร์ใหม่
+        } catch (error) {
+            console.error("Error adding banner:", error);
+            alert("เกิดข้อผิดพลาดในการเพิ่มแบนเนอร์");
+        }
+    };
+
+    // 🛠️ จุดที่ 4.3: ฟังก์ชันสำหรับลบแบนเนอร์ 🛠️
+    const handleDeleteBanner = async (id) => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        if (!window.confirm("คุณแน่ใจหรือไม่ว่าต้องการลบแบนเนอร์นี้?")) return;
+
+        try {
+            await axios.delete(`http://localhost:3001/banners/${id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            alert("ลบแบนเนอร์สำเร็จ!");
+            fetchBanners(); // โหลดรายการแบนเนอร์ใหม่
+        } catch (error) {
+            console.error("Error deleting banner:", error);
+            alert("เกิดข้อผิดพลาดในการลบแบนเนอร์");
+        }
+    };
   const handleAddBook = async (e) => {
     e.preventDefault();
     const token = localStorage.getItem("token");
@@ -354,6 +420,52 @@ function Admin() {
           )}
         </div>
       )}
+      {/* 🛠️ จุดที่ 3: เพิ่ม UI จัดการแบนเนอร์ 🛠️ */}
+            <section className="admin-banners" style={{ marginTop: '40px', padding: '20px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
+                <h2 style={{ color: '#ff4e63', borderBottom: '2px solid #ff4e63', paddingBottom: '10px' }}>
+                    <i className="fas fa-image" style={{ marginRight: '10px' }}></i> จัดการแบนเนอร์ (Home Page)
+                </h2>
+                
+                {/* ส่วนอัปโหลดแบนเนอร์ใหม่ */}
+                <form onSubmit={handleAddBanner} style={{ marginTop: '20px', display: 'flex', gap: '15px', alignItems: 'center' }}>
+                    <label style={{ fontSize: '14px', fontWeight: 'bold' }}>เพิ่มแบนเนอร์ใหม่:</label>
+                    <input 
+                        type="file" 
+                        accept="image/*"
+                        onChange={(e) => setNewBannerImage(e.target.files[0])} 
+                        style={{ flex: 1, padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+                    />
+                    <button type="submit" style={{ padding: '12px 24px', background: '#ff4e63', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                        <i className="fas fa-upload" style={{ marginRight: '8px' }}></i> อัปโหลด
+                    </button>
+                </form>
+                
+                {/* แสดงรายการแบนเนอร์ที่มีอยู่ */}
+                <div style={{ marginTop: '30px' }}>
+                    <h3 style={{ fontSize: '16px', color: '#555' }}>รายการแบนเนอร์ที่มีอยู่ ({banners.length})</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px', marginTop: '15px' }}>
+                        {banners.map(banner => (
+                            <div key={banner.id} style={{ position: 'relative', background: '#f5f5f5', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
+                                <img 
+                                    src={`http://localhost:3001${banner.image}`} 
+                                    alt={banner.title || 'Banner'} 
+                                    style={{ width: '100%', height: '120px', objectFit: 'cover' }} 
+                                />
+                                <button 
+                                    onClick={() => handleDeleteBanner(banner.id)}
+                                    style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(255,255,255,0.7)', color: '#ff4e63', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}
+                                    title="ลบแบนเนอร์"
+                                >
+                                    <i className="fas fa-trash-alt"></i>
+                                </button>
+                                {/* ถ้ามี title/link สามารถแสดงได้ตรงนี้ */}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+            
+            {/* ... (โค้ด UI ส่วนที่เหลือเดิม) ... */}
     </div>
   );
 }
