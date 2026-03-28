@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import '../assets/settingprofile.css'; // <--- สำคัญ: ต้องให้ Path ตรงกับที่เก็บไฟล์ CSS
+import '../assets/settingprofile.css'; 
 
-// ── Constants (ก๊อปมาให้ครบเหมือนหน้า SettingProfile) ──
+// ── Constants ──
 const MENU_ITEMS = [
     { label: 'นิยาย', subs: ['นิยายรักโรแมนติก','นิยายวาย','นิยายแฟนตาซี','นิยายสืบสวน','นิยายกำลังภายใน', 'ไลท์โนเวล','วรรณกรรมทั่วไป','นิยายยูริ','กวีนิพนธ์','แฟนเฟิค'] },
     { label: 'การ์ตูน', subs: [] },
@@ -34,17 +34,23 @@ function History() {
     const [notifOpen, setNotifOpen] = useState(false);
     const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
 
+    // --- States สำหรับ History ---
+    const [historyData, setHistoryData] = useState([]);
+    const [loadingHistory, setLoadingHistory] = useState(true);
+
     // --- Refs ---
     const profileRef = useRef(null);
     const megaRef = useRef(null);
     const notifRef = useRef(null);
 
-    // 1. ดึงข้อมูล Profile (เหมือนหน้า Setting)
+    // 1. ดึงข้อมูล Profile และ History
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (token) {
             setIsLoggedIn(true);
             setRole(localStorage.getItem('role'));
+            
+            // ดึงข้อมูล Profile
             axios.get('http://localhost:3001/profile', {
                 headers: { Authorization: `Bearer ${token}` }
             }).then(res => {
@@ -53,6 +59,18 @@ function History() {
                 if (res.data.image) setAvatar(res.data.image);
                 setCoins(res.data.coins ?? 0);
             }).catch(() => handleLogout());
+
+            // ดึงข้อมูลประวัติการซื้อ (History)
+            axios.get('http://localhost:3001/history', {
+                headers: { Authorization: `Bearer ${token}` }
+            }).then(res => {
+                setHistoryData(res.data);
+                setLoadingHistory(false);
+            }).catch(err => {
+                console.error("Error fetching history:", err);
+                setLoadingHistory(false);
+            });
+
         } else {
             navigate('/'); // ถ้าไม่ login ให้เด้งกลับหน้าแรก
         }
@@ -78,7 +96,7 @@ function History() {
 
     return (
         <div className="home-page">
-            {/* ── ส่วนที่ 1: NAVBAR (ยกมาจากหน้า Setting เป๊ะๆ) ── */}
+            {/* ── ส่วนที่ 1: NAVBAR ── */}
             <header className="navbar">
                 <div className="navbar-inner">
                     <div className="nav-left">
@@ -148,7 +166,7 @@ function History() {
                                         </div>
                                     )}
                                 </div>
-                                <button className="nav-icon-btn pos-rel"><i className="fas fa-shopping-cart"></i></button>
+                                <button className="nav-icon-btn pos-rel" onClick={() => navigate('/cart')}><i className="fas fa-shopping-cart"></i></button>
                                 <div className="profile-wrap" ref={profileRef}>
                                     <button className="nav-user-btn" onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false); }}>
                                         {avatar ? <img src={avatar} alt="avatar" style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover' }} /> : <i className="fas fa-user-circle nav-avatar" style={{fontSize: 30}}></i>}
@@ -179,22 +197,74 @@ function History() {
                 </div>
             </header>
 
-            {/* ── ส่วนที่ 2: CONTENT หน้า HISTORY (โครงสร้างแบบหน้า Setting) ── */}
+            {/* ── ส่วนที่ 2: CONTENT หน้า HISTORY ── */}
             <div className="setting-center-wrapper">
-                <div className="page">
+                <div className="page" style={{ maxWidth: '800px', margin: '0 auto', width: '100%' }}>
                     <div className="breadcrumb">
-                        <span>หน้าหลัก</span> / <span>ประวัติการสั่งซื้อ</span>
+                        <span onClick={() => navigate('/')} style={{cursor: 'pointer'}}>หน้าหลัก</span> / <span>ประวัติการสั่งซื้อ</span>
                     </div>
-                    <h1 className="heading">ประวัติการสั่งซื้อ</h1>
+                    <h1 className="heading" style={{ marginBottom: '20px' }}>ประวัติการสั่งซื้อ</h1>
                     
-                    <div className="card" style={{ padding: '60px 20px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '64px', color: '#eee', marginBottom: '20px' }}>
-                            <i className="fas fa-receipt"></i>
+                    {loadingHistory ? (
+                        <div style={{ textAlign: 'center', padding: '50px 0', color: '#666' }}>
+                            <i className="fas fa-spinner fa-spin" style={{ fontSize: '30px', marginBottom: '10px' }}></i>
+                            <p>กำลังโหลดข้อมูล...</p>
                         </div>
-                        <h2 style={{ color: '#333', marginBottom: '10px' }}>ยังไม่มีรายการซื้อ</h2>
-                        <p style={{ color: '#999' }}>เมื่อคุณซื้อหนังสือ รายการจะปรากฏที่นี่</p>
-                        <button className="logout-btn" style={{ marginTop: '20px' }} onClick={() => navigate('/')}>ไปเลือกซื้อหนังสือ</button>
-                    </div>
+                    ) : historyData.length === 0 ? (
+                        <div className="card" style={{ padding: '60px 20px', textAlign: 'center' }}>
+                            <div style={{ fontSize: '64px', color: '#eee', marginBottom: '20px' }}>
+                                <i className="fas fa-receipt"></i>
+                            </div>
+                            <h2 style={{ color: '#333', marginBottom: '10px' }}>ยังไม่มีรายการซื้อ</h2>
+                            <p style={{ color: '#999' }}>เมื่อคุณซื้อหนังสือหรือตอนนิยาย รายการจะปรากฏที่นี่</p>
+                            <button className="logout-btn" style={{ marginTop: '20px' }} onClick={() => navigate('/')}>ไปเลือกซื้อหนังสือ</button>
+                        </div>
+                    ) : (
+                        <div className="history-list">
+                            {historyData.map((item) => (
+                                <div key={item.id} className="card" style={{ 
+                                    padding: '15px 20px', 
+                                    marginBottom: '15px', 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'center',
+                                    borderLeft: `4px solid ${item.type === 'book' ? '#1976d2' : '#c2185b'}`
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                        {/* ไอคอนแยกประเภท ซื้อหนังสือ (book) หรือ ซื้อตอน (episode) */}
+                                        <div style={{
+                                            width: '45px', height: '45px', borderRadius: '50%', 
+                                            backgroundColor: item.type === 'book' ? '#e3f2fd' : '#fce4ec',
+                                            color: item.type === 'book' ? '#1976d2' : '#c2185b',
+                                            display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '20px'
+                                        }}>
+                                            <i className={item.type === 'book' ? 'fas fa-book' : 'fas fa-file-alt'}></i>
+                                        </div>
+                                        <div>
+                                            <h3 style={{ margin: '0 0 5px 0', fontSize: '16px', color: '#333' }}>
+                                                {item.title}
+                                            </h3>
+                                            <span style={{ fontSize: '13px', color: '#888' }}>
+                                                <i className="far fa-clock" style={{marginRight: '5px'}}></i>
+                                                {new Date(item.purchased_at).toLocaleString('th-TH', {
+                                                    year: 'numeric', month: 'short', day: 'numeric',
+                                                    hour: '2-digit', minute: '2-digit'
+                                                })} น.
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{ fontWeight: 'bold', color: '#d32f2f', fontSize: '18px' }}>
+                                            - {item.price} 🪙
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: '#666', marginTop: '4px', backgroundColor: '#f5f5f5', padding: '2px 8px', borderRadius: '12px', display: 'inline-block' }}>
+                                            {item.type === 'book' ? 'ซื้อหนังสือทั้งเล่ม' : 'ปลดล็อกตอน'}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

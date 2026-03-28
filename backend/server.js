@@ -122,6 +122,20 @@ db.run(`CREATE TABLE IF NOT EXISTS purchased_books (
     else console.log("✅ Table 'purchased_books' is ready.");
 });
 
+// 🧾 purchase_history table (ประวัติการใช้งานเหรียญ ซื้อหนังสือ/ตอน)
+db.run(`CREATE TABLE IF NOT EXISTS purchase_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    title TEXT,       -- ชื่อหนังสือ หรือ ชื่อตอนที่ซื้อ
+    type TEXT,        -- ประเภท: 'book' หรือ 'episode'
+    price INTEGER,    -- จำนวนเหรียญที่จ่ายไป
+    purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+)`, (err) => {
+    if (err) console.error("Error creating purchase_history table:", err);
+    else console.log("✅ Table 'purchase_history' is ready.");
+});
+
 // สร้าง admin
 const createAdmin = async () => {
     const username = 'admin123';
@@ -220,10 +234,11 @@ app.post('/login', (req, res) => {
         res.json({ message: 'Login successful', token, username: user.username });
     });
 });
-//กดซื้อตอน (หักเหรียญ + บันทึกลง Database)
+
+// 🔓 กดซื้อตอน (หักเหรียญ + บันทึกลง Database + บันทึกประวัติ)
 app.post('/unlock', verifyToken, (req, res) => {
     const userId = req.user.id;
-    const { bookId, episodeId, coinCost } = req.body; // รับค่ามาจากหน้าเว็บ
+    const { bookId, episodeId, coinCost } = req.body; 
 
     // 2.1 เช็คก่อนว่าเหรียญพอไหม
     db.get(`SELECT coins FROM users WHERE id = ?`, [userId], (err, user) => {
@@ -237,16 +252,27 @@ app.post('/unlock', verifyToken, (req, res) => {
         db.run(`UPDATE users SET coins = coins - ? WHERE id = ?`, [coinCost, userId], function(err) {
             if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการหักเหรียญ" });
 
-            // 2.3 บันทึกประวัติว่าซื้อตอนนี้แล้ว
+            // 2.3 บันทึกประวัติว่าซื้อตอนนี้แล้ว (สิทธิ์การอ่าน)
             db.run(`INSERT OR IGNORE INTO unlocked_episodes (user_id, book_id, episode_id) VALUES (?, ?, ?)`, 
             [userId, bookId, episodeId], function(err) {
                 if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการบันทึกตอน" });
                 
-                res.json({ message: "ปลดล็อกสำเร็จ!", remainingCoins: user.coins - coinCost });
+                // 2.4 บันทึกประวัติการสั่งซื้อ (สำหรับหน้า History)
+                db.get(`SELECT b.title as book_title, e.title as ep_title FROM books b JOIN episodes e ON b.id = e.book_id WHERE b.id = ? AND e.id = ?`, 
+                [bookId, episodeId], (err, row) => {
+                    const historyTitle = row ? `${row.book_title} - ${row.ep_title}` : `ปลดล็อกตอน ID: ${episodeId}`;
+                    
+                    db.run(`INSERT INTO purchase_history (user_id, title, type, price) VALUES (?, ?, ?, ?)`, 
+                    [userId, historyTitle, 'episode', coinCost], (err) => {
+                        if (err) console.error("History log error:", err);
+                        res.json({ message: "ปลดล็อกสำเร็จ!", remainingCoins: user.coins - coinCost });
+                    });
+                });
             });
         });
     });
 });
+
 // 🛒 Get Cart Items (ดึงของในตะกร้ามานับจำนวน)
 app.get('/cart', verifyToken, (req, res) => {
     const userId = req.user.id;
@@ -535,7 +561,7 @@ app.get('/favorites/full', verifyToken, (req, res) => {
 });
 
 
-// 💳 ระบบชำระเงินในตะกร้าด้วยเหรียญ
+// 💳 ระบบชำระเงินในตะกร้าด้วยเหรียญ (พร้อมบันทึกประวัติ)
 app.post('/cart/checkout', verifyToken, (req, res) => {
     const userId = req.user.id;
 
@@ -567,17 +593,25 @@ app.post('/cart/checkout', verifyToken, (req, res) => {
                 const values = [];
                 items.forEach(item => values.push(userId, item.book_id));
 
-                // ใช้ INSERT OR IGNORE เผื่อป้องกันข้อผิดพลาดกรณีมีข้อมูลซ้ำ
                 db.run(`INSERT OR IGNORE INTO purchased_books (user_id, book_id) VALUES ${placeholders}`, values, function(err) {
                     if (err) console.error("Error inserting to library:", err);
 
-                    // 3️⃣ ลบสินค้าออกจากตะกร้าเมื่อเสร็จสิ้น
-                    db.run(`DELETE FROM cart_items WHERE user_id = ?`, [userId], (err) => {
-                        if (err) console.error("Clear cart error:", err);
-                        
-                        res.json({ 
-                            message: "ชำระเงินสำเร็จ! หนังสือถูกเพิ่มเข้าชั้นหนังสือของคุณแล้ว", 
-                            remainingCoins: user.coins - totalCost 
+                    // 3️⃣ บันทึกประวัติการซื้อลง purchase_history (สำหรับหน้า History)
+                    const historyPlaceholders = items.map(() => "(?, ?, ?, ?)").join(",");
+                    const historyValues = [];
+                    items.forEach(item => historyValues.push(userId, item.title, 'book', item.price || 0));
+
+                    db.run(`INSERT INTO purchase_history (user_id, title, type, price) VALUES ${historyPlaceholders}`, historyValues, function(err) {
+                        if (err) console.error("Error inserting to purchase_history:", err);
+
+                        // 4️⃣ ลบสินค้าออกจากตะกร้าเมื่อเสร็จสิ้น
+                        db.run(`DELETE FROM cart_items WHERE user_id = ?`, [userId], (err) => {
+                            if (err) console.error("Clear cart error:", err);
+                            
+                            res.json({ 
+                                message: "ชำระเงินสำเร็จ! หนังสือถูกเพิ่มเข้าชั้นหนังสือของคุณแล้ว", 
+                                remainingCoins: user.coins - totalCost 
+                            });
                         });
                     });
                 });
@@ -621,6 +655,23 @@ app.get('/library', verifyToken, (req, res) => {
  
     db.all(sql, [userId], (err, rows) => {
         if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+        res.json(rows);
+    });
+});
+
+// 🧾 ดึงประวัติการสั่งซื้อ (History)
+app.get('/history', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    
+    const sql = `
+        SELECT id, title, type, price, purchased_at 
+        FROM purchase_history 
+        WHERE user_id = ? 
+        ORDER BY purchased_at DESC
+    `;
+    
+    db.all(sql, [userId], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error", error: err.message });
         res.json(rows);
     });
 });
