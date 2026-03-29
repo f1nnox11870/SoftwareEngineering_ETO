@@ -4,7 +4,7 @@ import axios from 'axios';
 import Login from './login';
 import Register from './Register';
 import '../assets/topup.css';
-
+import Transaction from './Transaction';
 const MENU_ITEMS = [
     { label: 'นิยาย',        subs: ['นิยายรักโรแมนติก','นิยายวาย','นิยายแฟนตาซี','นิยายสืบสวน','นิยายกำลังภายใน','ไลท์โนเวล','วรรณกรรมทั่วไป','นิยายยูริ','กวีนิพนธ์','แฟนเฟิค'] },
     { label: 'การ์ตูน',      subs: [] },
@@ -233,31 +233,45 @@ function Topup() {
     const removeSlip = () => { setSlipFile(null); setSlipPreview(null); if (slipInputRef.current) slipInputRef.current.value = ''; };
 
     const handleSubmitTopup = async () => {
-        if (!slipFile) { setSubmitError('กรุณาแนบสลิปก่อนยืนยัน'); return; }
-        const token = localStorage.getItem('token');
-        if (!token) { closeQR(); setModal('login'); return; }
-        setIsSubmitting(true); setSubmitError('');
-        try {
-            const fd = new FormData();
-            fd.append('package_id', qrPkg.id);
-            fd.append('coins', qrPkg.coins);
-            fd.append('bonus', qrPkg.bonus || 0);
-            fd.append('total_coins', qrPkg.total);
-            fd.append('amount', qrPkg.price.replace(',', ''));
-            fd.append('slip', slipFile);
-            await axios.post('http://localhost:3001/topup/request', fd, {
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
-            });
-            const pkg = qrPkg;
-            closeQR();
-            setSuccessMsg(`ส่งคำขอเติม ${pkg.total.toLocaleString()} เหรียญสำเร็จ!\nแอดมินจะตรวจสอบและเพิ่มเหรียญให้ภายใน 15 นาที 🎉`);
-            setShowSuccess(true);
-            refreshNotifications(token);
-        } catch (err) {
-            setSubmitError(err.response?.data?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
-        } finally { setIsSubmitting(false); }
-    };
+    if (!slipFile) { setSubmitError('กรุณาแนบสลิปก่อนยืนยัน'); return; }
+    const token = localStorage.getItem('token');
+    if (!token) { closeQR(); setModal('login'); return; }
 
+    setIsSubmitting(true); 
+    setSubmitError('');
+
+    try {
+        const fd = new FormData();
+        fd.append('package_id', qrPkg.id);
+        fd.append('coins', qrPkg.coins);
+        fd.append('bonus', qrPkg.bonus || 0);
+        fd.append('total_coins', qrPkg.total);
+        fd.append('amount', qrPkg.price.replace(',', ''));
+        fd.append('slip', slipFile);
+
+        await axios.post('http://localhost:3001/topup/request', fd, {
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
+        });
+
+        const pkg = qrPkg;
+        
+        // ✨ การจัดการ UI หลังจากสำเร็จ
+        setSlipFile(null); 
+        setSlipPreview(null);
+        if (slipInputRef.current) slipInputRef.current.value = ''; // ล้างค่าที่ช่องเลือกไฟล์
+
+        setSuccessMsg(`ส่งคำขอเติม ${pkg.total.toLocaleString()} เหรียญสำเร็จ!\nแอดมินจะตรวจสอบและเพิ่มเหรียญให้ภายใน 15 นาที 🎉`);
+        setShowSuccess(true);
+        
+        refreshNotifications(token); // อัปเดตแจ้งเตือน
+        closeQR(); // ปิดหน้าต่างสแกน
+
+    } catch (err) {
+        setSubmitError(err.response?.data?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
+    } finally { 
+        setIsSubmitting(false); 
+    }
+};
     return (
         <div className="home-page">
             {/* ══ NAVBAR ══ */}
@@ -539,10 +553,26 @@ function Topup() {
                             <input ref={slipInputRef} type="file" accept="image/jpeg,image/jpg,image/png,image/gif,image/webp" onChange={handleSlipChange} style={{ display: 'none' }} />
                             {submitError && <div className="topup-slip-error"><i className="fas fa-exclamation-circle"></i> {submitError}</div>}
                         </div>
-                        <button className="topup-btn-done" onClick={handleSubmitTopup} disabled={isSubmitting || !slipFile}
-                            style={{ opacity: (!slipFile || isSubmitting) ? 0.55 : 1, cursor: (!slipFile || isSubmitting) ? 'not-allowed' : 'pointer' }}>
+                        <button 
+                            className="topup-btn-done" 
+                            onClick={handleSubmitTopup} 
+                            disabled={isSubmitting || !slipFile}
+                            style={{ 
+                                opacity: (!slipFile || isSubmitting) ? 0.55 : 1, 
+                                cursor: (!slipFile || isSubmitting) ? 'not-allowed' : 'pointer',
+                                marginBottom: '20px' // เพิ่มระยะห่างด้านล่างปุ่ม
+                            }}>
                             {isSubmitting ? <><i className="fas fa-spinner fa-spin" style={{ marginRight: 6 }}></i>กำลังส่ง…</> : <><i className="fas fa-paper-plane" style={{ marginRight: 6 }}></i>ส่งสลิปยืนยันการชำระ</>}
                         </button>
+                        <div style={{ 
+                            marginTop: '10px', 
+                            borderTop: '2px dashed #eee', 
+                            paddingTop: '20px',
+                            textAlign: 'left' // บังคับให้ข้อความชิดซ้ายตามดีไซน์ Transaction
+                        }}>
+                            <Transaction key={isSubmitting} /> 
+                            {/* เทคนิค: การใส่ key={isSubmitting} จะทำให้รายการอัปเดตทันทีเมื่อส่งสลิปสำเร็จ */}
+                        </div>
                     </div>
                 </div>
             )}

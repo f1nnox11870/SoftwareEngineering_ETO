@@ -14,7 +14,9 @@ import History from './components/History'
 import SettingProfile from './components/settingprofile'
 import Read from './components/Read'
 import MyShelf from './components/myshelf'
+import AdminTopup from './components/AdminTopup';
 
+import Transaction from './components/Transaction';
 function App() {
   return (
     <Router>
@@ -30,6 +32,8 @@ function App() {
           <Route path="/read/:id" element={<Read />} />
           <Route path="/settingprofile" element={<SettingProfile />} />
           <Route path="myshelf" element={<MyShelf />} />
+          <Route path="/admin-topup" element={<AdminTopup />} />
+          <Route path="/transaction" element={<Transaction />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/profile" element={<Profile />} />
           </Route>
