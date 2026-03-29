@@ -23,9 +23,54 @@ const db = new sqlite3.Database('./users.db', (err) => {
         console.log('✅ Connected to the users database.');
     }
 });
+const postUploadDir = path.join(__dirname, 'uploads', 'posts');
+if (!fs.existsSync(postUploadDir)) {
+    fs.mkdirSync(postUploadDir, { recursive: true });
+}
 
+// ตั้งค่า Multer สำหรับ Post
+const postStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/posts'); // เก็บไว้ในโฟลเดอร์ uploads/posts
+    },
+    filename: (req, file, cb) => {
+        cb(null, 'post-' + Date.now() + path.extname(file.originalname));
+    }
+});
+const uploadPost = multer({ storage: postStorage });
+// Middleware สำหรับตรวจสอบ JWT Token
+// --- ส่วนของ LOGIN (ตัวอย่าง) ---
+// jwt.sign({ id: user.id }, 'ค่านี้ต้องตรงกัน', ...)
+
+// --- ส่วนของ Middleware (แก้ไขให้ตรงกัน) ---
+// ตัวอย่าง: ถ้าตอน Login คุณเขียนแบบนี้
+// jwt.sign({ id: user.id }, 'MySecret123', { expiresIn: '1d' });
+
+// ใน authenticateToken ก็ต้องเป็นแบบนี้
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) return res.status(401).json({ message: "Unauthenticated" });
+
+    // 💡 ใช้ค่าจากไฟล์ .env ที่คุณตั้งไว้ (my_super_secret_key)
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => { 
+        if (err) {
+            console.log("JWT Error Details:", err.message); // ถ้ายังขึ้น invalid signature ให้เช็คบรรทัดด้านล่าง
+            return res.status(403).json({ message: "Forbidden" });
+        }
+        req.user = user;
+        next();
+    });
+};
 // ================= DATABASE SETUP =================
-
+db.run(`CREATE TABLE IF NOT EXISTS post_likes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER,
+    user_id INTEGER,
+    type TEXT, -- 'like' หรือ 'dislike'
+    UNIQUE(post_id, user_id) -- บังคับให้ 1 คน กดได้แค่ 1 ครั้งต่อ 1 โพสต์
+)`);
 // 📚 books table
 db.run(`CREATE TABLE IF NOT EXISTS books (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -341,7 +386,22 @@ app.post('/unlock', verifyToken, (req, res) => {
         });
     });
 });
+// 💰 [ADMIN] ดึงรายการเติมเงินที่รอตรวจสอบ (สถานะ pending)
+app.get('/admin/topups', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
 
+    const sql = `
+        SELECT t.id, t.user_id, u.username, t.package_id, t.coins, t.amount, t.slip_image, t.status, t.created_at
+        FROM topup_requests t
+        JOIN users u ON t.user_id = u.id
+        WHERE t.status = 'pending'
+        ORDER BY t.created_at ASC
+    `;
+    db.all(sql, [], (err, rows) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        res.json(rows);
+    });
+});
 app.get('/purchased', verifyToken, (req, res) => {
     const userId = req.user.id;
     db.all(`SELECT book_id FROM purchased_books WHERE user_id = ?`, [userId], (err, rows) => {
@@ -525,6 +585,28 @@ app.get('/profile', verifyToken, (req, res) => {
     });
 });
 
+// ✅ [ADMIN] อนุมัติการเติมเงิน (อัปเดตสถานะ และบวกเหรียญให้ User)
+app.put('/admin/topups/:id/approve', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
+    const requestId = req.params.id;
+    const adminId = req.user.id;
+
+    // ดึงข้อมูลคำขอเพื่อดูว่าต้องให้กี่เหรียญ และให้ใคร
+    db.get(`SELECT user_id, coins FROM topup_requests WHERE id = ? AND status = 'pending'`, [requestId], (err, request) => {
+        if (err || !request) return res.status(404).json({ message: "ไม่พบคำขอ หรืออนุมัติไปแล้ว" });
+
+        db.serialize(() => {
+            // 1. เปลี่ยนสถานะเป็น approved
+            db.run(`UPDATE topup_requests SET status = 'approved', approved_at = CURRENT_TIMESTAMP, approved_by = ? WHERE id = ?`, [adminId, requestId]);
+            
+            // 2. บวกเหรียญให้ User
+            db.run(`UPDATE users SET coins = coins + ? WHERE id = ?`, [request.coins, request.user_id], (err) => {
+                if (err) return res.status(500).json({ message: "Failed to add coins" });
+                res.json({ message: "อนุมัติสำเร็จ ผู้ใช้ได้รับเหรียญแล้ว!" });
+            });
+        });
+    });
+});
 app.put('/profile/username', verifyToken, (req, res) => {
     const userId = req.user.id;
     const { username } = req.body;
@@ -614,7 +696,6 @@ app.delete('/favorites/remove', verifyToken, (req, res) => {
         res.json({ message: "ลบออกจากรายการโปรดแล้ว" });
     });
 });
-
 app.post('/favorites/toggle', verifyToken, (req, res) => {
     const userId = req.user.id;
     const bookId = req.body.book_id || req.body.bookId;
@@ -626,17 +707,15 @@ app.post('/favorites/toggle', verifyToken, (req, res) => {
             if (err) return res.status(500).json({ message: "Database error" });
 
             if (row) {
-                db.run(
-                    `DELETE FROM favorites WHERE user_id = ? AND book_id = ?`,
-                    [userId, bookId],
-                    () => res.json({ status: "removed" })
-                );
+                db.run(`DELETE FROM favorites WHERE id = ?`, [row.id], () => {
+                db.run(`UPDATE books SET likes = MAX(0, likes - 1) WHERE id = ?`, [bookId]);
+                res.json({ status: "removed" });
+            });
             } else {
-                db.run(
-                    `INSERT INTO favorites (user_id, book_id) VALUES (?, ?)`,
-                    [userId, bookId],
-                    () => res.json({ status: "added" })
-                );
+                db.run(`INSERT INTO favorites (user_id, book_id) VALUES (?, ?)`, [userId, bookId], () => {
+                db.run(`UPDATE books SET likes = likes + 1 WHERE id = ?`, [bookId]);
+                res.json({ status: "added" });
+            });
             }
         }
     );
@@ -915,7 +994,29 @@ app.post('/admin/topup-approve/:id', verifyToken, (req, res) => {
         });
     });
 });
-
+// ==========================================
+// ❤️ API สำหรับกดหัวใจ (เพิ่ม/ลบ ยอด likes)
+// ==========================================
+app.post('/toggle-like', (req, res) => {
+    const { bookId, isLiked } = req.body;
+    
+    // ถ้า isLiked เป็น true ให้บวก 1 (+1) ถ้าเป็น false ให้ลบ 1 (-1)
+    const operator = isLiked ? '+ 1' : '- 1';
+    
+    db.run(
+        `UPDATE books SET likes = likes ${operator} WHERE id = ?`,
+        [bookId],
+        function(err) {
+            if (err) return res.status(500).json({ success: false, message: "Database error" });
+            
+            // ดึงค่ายอดไลก์ล่าสุดส่งกลับไปอัปเดตหน้าจอ
+            db.get(`SELECT likes FROM books WHERE id = ?`, [bookId], (err, row) => {
+                if (err) return res.status(500).json({ success: false });
+                res.json({ success: true, likes: row ? row.likes : 0 });
+            });
+        }
+    );
+});
 // ❌ [ADMIN] ปฏิเสธคำขอเติมเหรียญ
 app.post('/admin/topup-reject/:id', verifyToken, (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
@@ -959,6 +1060,234 @@ app.get('/generate-qr', (req, res) => {
     qrcode.toDataURL(payload, options, (err, url) => {
         if (err) return res.status(500).json({ message: "QR Generation Error" });
         res.json({ qrImage: url });
+    });
+});
+app.get('/topup-history', authenticateToken, (req, res) => {
+    // ลอง console.log ดูว่า req.user มีค่าอะไรออกมา
+    console.log("User from Token:", req.user); 
+
+    const userId = req.user.id; // หรือ req.user.userId ตามที่คุณ sign ไว้ตอน login
+    db.all(
+        `SELECT * FROM topup_requests WHERE user_id = ? ORDER BY created_at DESC`, 
+        [userId], 
+        (err, rows) => {
+            if (err) return res.status(500).json(err);
+            res.json(rows);
+        }
+    );
+});
+// ==========================================
+// 📢 API สำหรับระบบโพสต์ "เร็วๆ นี้" (News Feed)
+// ==========================================
+
+// 1. [GET] ดึงข้อมูลโพสต์ทั้งหมด
+// 1. [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมคอมเมนต์
+// 1. [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมคอมเมนต์ (แบบ Safe Mode ไม่ Join ตารางอื่น)
+// 1. [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมคอมเมนต์และชื่อคนพิมพ์
+// [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมบอกสถานะว่า User นี้เคยกดโหวตหรือยัง (Optional Token)
+// [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมคอมเมนต์ และสถานะการโหวตของ User ปัจจุบัน
+app.get('/posts', (req, res) => {
+    // 1. ดึงโพสต์ทั้งหมด
+    db.all("SELECT * FROM posts ORDER BY created_at DESC", [], (err, posts) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        // 2. ดึงคอมเมนต์ พร้อมชื่อคนคอมเมนต์
+        // ดึง u.image แล้วเปลี่ยนชื่อเป็น profile_image ชั่วคราวตอนส่งไป Frontend
+        const sqlComments = `
+            SELECT c.*, u.username, u.image AS profile_image
+            FROM post_comments c
+            LEFT JOIN users u ON c.user_id = u.id
+            ORDER BY c.created_at ASC
+        `;
+        db.all(sqlComments, [], (err2, comments) => {
+            if (err2) return res.status(500).json({ error: err2.message });
+
+            // จับคู่คอมเมนต์ใส่ในโพสต์
+            let postsData = posts.map(post => {
+                post.comments = comments.filter(c => c.post_id === post.id);
+                return post;
+            });
+
+            // 3. เช็ค Token ว่ามีคนล็อกอินอยู่ไหม (เพื่อเช็คสีปุ่ม Like/Dislike)
+            const token = req.headers.authorization?.split(' ')[1];
+            if (!token) {
+                // ถ้าไม่ล็อกอิน ก็ส่งข้อมูลกลับไปเลย (ปุ่มจะเป็นสีเทา)
+                postsData = postsData.map(post => ({ ...post, user_vote: null }));
+                return res.json(postsData);
+            }
+
+            // 4. ถ้ามี Token ดึงประวัติการโหวตของ User คนนี้
+            try {
+                // (ถ้าไฟล์คุณยังไม่ import jwt ให้เติม const jwt = require('jsonwebtoken'); ไว้ด้านบนไฟล์ด้วยนะครับ)
+                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+                const userId = decoded.id;
+
+                db.all("SELECT post_id, type FROM post_likes WHERE user_id = ?", [userId], (err3, userVotes) => {
+                    if (err3) return res.status(500).json({ error: err3.message });
+
+                    // จับคู่สถานะการโหวตใส่ในโพสต์
+                    postsData = postsData.map(post => {
+                        const vote = userVotes.find(v => v.post_id === post.id);
+                        return { ...post, user_vote: vote ? vote.type : null };
+                    });
+
+                    // ส่งข้อมูลแบบสมบูรณ์กลับไปให้ Frontend
+                    res.json(postsData);
+                });
+            } catch (jwtErr) {
+                // Token พัง ก็ทำเหมือนไม่ได้ล็อกอิน
+                postsData = postsData.map(post => ({ ...post, user_vote: null }));
+                res.json(postsData);
+            }
+        });
+    });
+});
+// 2. [POST] แอดมินสร้างโพสต์ใหม่
+app.post('/admin/add-post', verifyToken, uploadPost.single('image'), (req, res) => {
+    const { caption } = req.body;
+    const imageUrl = req.file ? `/uploads/posts/${req.file.filename}` : null;
+
+    if (!caption && !imageUrl) {
+        return res.status(400).json({ message: "กรุณาใส่ข้อความหรือรูปภาพอย่างน้อยหนึ่งอย่าง" });
+    }
+
+    const sql = "INSERT INTO posts (caption, image_url) VALUES (?, ?)";
+    
+    // SQLite ใช้ db.run สำหรับ INSERT/UPDATE/DELETE
+    db.run(sql, [caption, imageUrl], function(err) {
+        if (err) {
+            console.error("Error creating post:", err);
+            return res.status(500).json({ error: "Database error" });
+        }
+        res.status(201).json({ message: "สร้างโพสต์สำเร็จ!", id: this.lastID });
+    });
+});
+
+// 3. [DELETE] แอดมินลบโพสต์
+app.delete('/admin/delete-post/:id', verifyToken, (req, res) => {
+    const postId = req.params.id;
+
+    // หาชื่อไฟล์รูปก่อนเพื่อจะลบออกจากเครื่อง
+    db.get("SELECT image_url FROM posts WHERE id = ?", [postId], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        if (row && row.image_url) {
+            const imagePath = path.join(__dirname, row.image_url);
+            if (fs.existsSync(imagePath)) {
+                fs.unlinkSync(imagePath); 
+            }
+        }
+
+        // ลบข้อมูลออกจาก Database
+        db.run("DELETE FROM posts WHERE id = ?", [postId], function(deleteErr) {
+            if (deleteErr) return res.status(500).json({ error: deleteErr.message });
+            res.json({ message: "ลบโพสต์และรูปภาพสำเร็จ!" });
+        });
+    });
+});
+app.post('/posts/:id/like', (req, res) => {
+    const postId = req.params.id;
+    // สั่งให้เพิ่มค่า likes_count ขึ้น 1
+    db.run("UPDATE posts SET likes_count = likes_count + 1 WHERE id = ?", [postId], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: "เพิ่มไลค์สำเร็จ" });
+    });
+});
+
+// 2. [POST] กด Dislike
+// 2. [POST] โหวตโพสต์ (Like / Dislike) - จำกัด 1 คนต่อ 1 โพสต์
+// [POST] โหวตโพสต์ (Like / Dislike) - จำกัด 1 คนต่อ 1 โพสต์ พร้อมระบบกดซ้ำยกเลิก (Toggle)
+app.post('/posts/:id/vote', verifyToken, (req, res) => {
+    const postId = req.params.id;
+    const userId = req.user.id; // ดึง ID คนล็อกอินจาก Token
+    const { type } = req.body; // รับค่ามาว่าเป็น 'like' หรือ 'dislike'
+
+    if (!type || !['like', 'dislike'].includes(type)) {
+        return res.status(400).json({ message: "ข้อมูลประเภทโหวตไม่ถูกต้อง" });
+    }
+
+    // 1. เช็คก่อนว่าคนนี้เคยโหวตโพสต์นี้ไปหรือยัง และโหวตเป็นอะไรไว้
+    db.get("SELECT type FROM post_likes WHERE post_id = ? AND user_id = ?", [postId, userId], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        if (row) {
+            // --- สถานการณ์: User เคยโหวตโพสต์นี้แล้ว ---
+            
+            if (row.type === type) {
+                // Scenario A: กดซ้ำปุ่มเดิม -> ยกเลิกการโหวต (Undo)
+                
+                // ลบประวัติออกจากตาราง post_likes
+                db.run("DELETE FROM post_likes WHERE post_id = ? AND user_id = ?", [postId, userId], function(err2) {
+                    if (err2) return res.status(500).json({ error: err2.message });
+
+                    // อัปเดตตัวเลขลดลงในตาราง posts
+                    const columnToUpdate = type === 'like' ? 'likes_count' : 'dislikes_count';
+                    db.run(`UPDATE posts SET ${columnToUpdate} = ${columnToUpdate} - 1 WHERE id = ?`, [postId], function(err3) {
+                        if (err3) return res.status(500).json({ error: err3.message });
+                        res.json({ message: `ยกเลิกการกด ${type} สำเร็จ!`, action: 'removed', newVote: null });
+                    });
+                });
+
+            } else {
+                // Scenario B: กดสลับปุ่ม (เช่น เคย Dislike ไว้ แล้วมากด Like)
+                
+                // อัปเดตประเภทโหวตในตาราง post_likes
+                db.run("UPDATE post_likes SET type = ? WHERE post_id = ? AND user_id = ?", [type, postId, userId], function(err2) {
+                    if (err2) return res.status(500).json({ error: err2.message });
+
+                    // สลับตัวเลขในตาราง posts (บวกอันใหม่ ลดอันเก่า)
+                    let sqlUpdatePosts = '';
+                    if (type === 'like') {
+                        sqlUpdatePosts = "UPDATE posts SET likes_count = likes_count + 1, dislikes_count = dislikes_count - 1 WHERE id = ?";
+                    } else {
+                        sqlUpdatePosts = "UPDATE posts SET dislikes_count = dislikes_count + 1, likes_count = likes_count - 1 WHERE id = ?";
+                    }
+
+                    db.run(sqlUpdatePosts, [postId], function(err3) {
+                        if (err3) return res.status(500).json({ error: err3.message });
+                        res.json({ message: `เปลี่ยนเป็นกด ${type} สำเร็จ!`, action: 'switched', newVote: type });
+                    });
+                });
+            }
+
+        } else {
+            // --- สถานการณ์: User ยังไม่เคยโหวตโพสต์นี้เลย ---
+            
+            // บันทึกลงตาราง post_likes
+            db.run("INSERT INTO post_likes (post_id, user_id, type) VALUES (?, ?, ?)", [postId, userId, type], function(err2) {
+                if (err2) return res.status(500).json({ error: err2.message });
+
+                // อัปเดตตัวเลขเพิ่มขึ้นในตาราง posts
+                const columnToUpdate = type === 'like' ? 'likes_count' : 'dislikes_count';
+                db.run(`UPDATE posts SET ${columnToUpdate} = ${columnToUpdate} + 1 WHERE id = ?`, [postId], function(err3) {
+                    if (err3) return res.status(500).json({ error: err3.message });
+                    res.json({ message: `กด ${type} สำเร็จ!`, action: 'added', newVote: type });
+                });
+            });
+        }
+    });
+});
+
+// 3. (แถม) สร้าง Table สำหรับเก็บคอมเมนต์ (รันครั้งแรกมันจะสร้างให้เอง)
+db.run(`CREATE TABLE IF NOT EXISTS post_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER,
+    user_id INTEGER,
+    comment_text TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// 4. [POST] ส่งคอมเมนต์
+app.post('/posts/:id/comment', verifyToken, (req, res) => {
+    const postId = req.params.id;
+    const { text } = req.body;
+    const userId = req.user?.id || 1; // สมมติว่าดึง id คนล็อกอินมาจาก token
+
+    if (!text) return res.status(400).json({ message: "กรุณาพิมพ์ข้อความ" });
+
+    db.run("INSERT INTO post_comments (post_id, user_id, comment_text) VALUES (?, ?, ?)", [postId, userId, text], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: "คอมเมนต์สำเร็จ", commentId: this.lastID });
     });
 });
 // ================= START SERVER =================

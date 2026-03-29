@@ -26,6 +26,11 @@ function Admin() {
   const [epContent, setEpContent] = useState(""); // สำหรับนิยาย (Text)
   const [epImages, setEpImages] = useState([]);   // สำหรับมังงะ (Array of Base64)
 
+  // 🛠️ State สำหรับระบบโพสต์ "เร็วๆ นี้"
+  const [newsPosts, setNewsPosts] = useState([]);
+  const [postCaption, setPostCaption] = useState("");
+  const [postImage, setPostImage] = useState(null);
+  const [postPreview, setPostPreview] = useState(null); // สำหรับโชว์รูปก่อนอัปโหลด
   // ดึงข้อมูลหนังสือที่ถูกเลือกมาดูว่าหมวดหมู่อะไร
   const selectedBook = books.find(b => b.id.toString() === selectedBookId.toString());
   const isManga = selectedBook?.category === "มังงะ";
@@ -239,7 +244,70 @@ function Admin() {
       alert(err.response?.data?.message || "เกิดข้อผิดพลาดในการลบ");
     }
   };
+  // ดึงข้อมูลโพสต์ทั้งหมด
+  const fetchPosts = async () => {
+    try {
+      const res = await axios.get("http://localhost:3001/posts");
+      setNewsPosts(res.data);
+    } catch (err) {
+      console.error("Error fetching posts:", err);
+    }
+  };
 
+  // จัดการเลือกรูปโพสต์
+  const handlePostImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setPostImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setPostPreview(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // สร้างโพสต์ใหม่
+  const handleCreatePost = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem("token");
+    if (!postCaption && !postImage) return alert("กรุณาใส่ข้อความหรือรูปภาพอย่างน้อยหนึ่งอย่างครับ");
+
+    const formData = new FormData();
+    formData.append("caption", postCaption);
+    if (postImage) formData.append("image", postImage);
+
+    try {
+      await axios.post("http://localhost:3001/admin/add-post", formData, {
+        headers: { 
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}` 
+        }
+      });
+      alert("สร้างโพสต์สำเร็จ!");
+      setPostCaption(""); setPostImage(null); setPostPreview(null);
+      fetchPosts(); // โหลดรายการใหม่
+    } catch (err) {
+      alert("เกิดข้อผิดพลาดในการสร้างโพสต์");
+    }
+  };
+
+  // ลบโพสต์
+  const handleDeletePost = async (id) => {
+    if (!window.confirm("ต้องการลบโพสต์นี้ใช่หรือไม่?")) return;
+    const token = localStorage.getItem("token");
+    try {
+      await axios.delete(`http://localhost:3001/admin/delete-post/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchPosts();
+    } catch (err) {
+      alert("ลบโพสต์ไม่สำเร็จ");
+    }
+  };
+
+  // เพิ่ม fetchPosts ใน useEffect แรกสุดที่มีอยู่แล้ว
+  useEffect(() => {
+    fetchPosts();
+  }, []);
   // ================= STYLES =================
   const dropZoneStyle = { width: "100%", height: "250px", border: isDragging ? "3px dashed #ff4e63" : "2px dashed #ccc", borderRadius: "15px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backgroundColor: isDragging ? "#fff0f1" : "#fafafa", cursor: "pointer", transition: "all 0.3s ease", overflow: "hidden", marginBottom: "20px" };
   const inputStyle = { width: "100%", padding: "12px", marginBottom: "15px", border: "1px solid #ddd", borderRadius: "8px", boxSizing: "border-box", fontSize: "14px", fontFamily: "Sarabun" };
@@ -466,6 +534,54 @@ function Admin() {
             </section>
             
             {/* ... (โค้ด UI ส่วนที่เหลือเดิม) ... */}
+            {/* 🛠️ ส่วนจัดการโพสต์ "เร็วๆ นี้" 🛠️ */}
+      <section className="admin-posts" style={{ marginTop: '40px', padding: '20px', background: '#fff', borderRadius: '15px', border: '2px solid #eee' }}>
+          <h2 style={{ color: '#333', borderBottom: '2px solid #333', paddingBottom: '10px' }}>
+              <i className="fas fa-bullhorn" style={{ marginRight: '10px', color: '#ff4e63' }}></i> สร้างโพสต์ใหม่ (Coming Soon)
+          </h2>
+
+          <form onSubmit={handleCreatePost} style={{ marginTop: '20px' }}>
+              <label>ข้อความบรรยาย (Caption)</label>
+              <textarea 
+                  style={{ ...inputStyle, height: '100px', resize: 'vertical' }} 
+                  placeholder="เขียนอะไรบางอย่าง..." 
+                  value={postCaption}
+                  onChange={(e) => setPostCaption(e.target.value)}
+              />
+
+              <label>แนบรูปภาพ (ถ้ามี)</label>
+              <input type="file" accept="image/*" onChange={handlePostImageChange} style={inputStyle} />
+              
+              {postPreview && (
+                  <div style={{ marginBottom: '15px', textAlign: 'center' }}>
+                      <img src={postPreview} alt="Preview" style={{ maxWidth: '100%', borderRadius: '8px', maxHeight: '200px' }} />
+                  </div>
+              )}
+
+              <button type="submit" style={btnStyle}>📢 ประกาศข่าวเลย</button>
+          </form>
+
+          {/* รายการโพสต์ที่เคยสร้างไว้ */}
+          <div style={{ marginTop: '30px' }}>
+              <h3 style={{ fontSize: '16px', color: '#666' }}>รายการข่าวสารล่าสุด</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '15px' }}>
+                  {newsPosts.map(post => (
+                      <div key={post.id} style={{ display: 'flex', gap: '15px', padding: '10px', border: '1px solid #eee', borderRadius: '8px', alignItems: 'center', position: 'relative' }}>
+                          {post.image_url && (
+                              <img src={`http://localhost:3001${post.image_url}`} alt="Post" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px' }} />
+                          )}
+                          <div style={{ flex: 1, overflow: 'hidden' }}>
+                              <p style={{ margin: 0, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{post.caption || "(ไม่มีข้อความ)"}</p>
+                              <small style={{ color: '#999' }}>{new Date(post.created_at).toLocaleString('th-TH')}</small>
+                          </div>
+                          <button onClick={() => handleDeletePost(post.id)} style={{ color: '#ff4e63', border: 'none', background: 'none', cursor: 'pointer' }}>
+                              <i className="fas fa-trash"></i>
+                          </button>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      </section>
     </div>
   );
 }

@@ -400,7 +400,35 @@ function Cart() {
                                     <span style={{ fontWeight: 'bold' }}>{coins?.toLocaleString()} 🪙</span>
                                 </div>
                                 {coins < totalPrice && (
-                                    <p style={{ color: 'red', fontSize: '12px', marginTop: '5px' }}>* เหรียญไม่พอ กรุณาเติมเหรียญ</p>
+                                    <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                                        <p style={{ color: '#ff4e63', fontSize: '13px', marginBottom: '10px', fontWeight: 'bold' }}>
+                                            <i className="fas fa-exclamation-circle"></i> เหรียญไม่พอ กรุณาเติมเหรียญ
+                                        </p>
+                                        <button 
+                                            onClick={() => navigate('/topup')} // 👈 ให้ลิงก์ไปหน้าเติมเงิน
+                                            style={{
+                                                width: '100%',
+                                                padding: '8px 10px',
+                                                background: '#ff9800', 
+                                                color: '#fff',
+                                                border: 'none',
+                                                borderRadius: '6px',
+                                                cursor: 'pointer',
+                                                fontWeight: 'bold',
+                                                fontSize: '14px',
+                                                display: 'flex',
+                                                justifyContent: 'center',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                transition: 'all 0.2s'
+                                            }}
+                                            onMouseOver={(e) => e.target.style.background = '#e68a00'}
+                                            onMouseOut={(e) => e.target.style.background = '#ff9800'}
+                                        >
+                                            <i className="fas fa-coins"></i> ไปหน้าเติมเหรียญ
+                                        </button>
+                                    </div>
                                 )}
                             </div>
 

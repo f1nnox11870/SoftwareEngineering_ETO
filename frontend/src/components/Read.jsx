@@ -10,13 +10,14 @@ function Read() {
     const [episodes, setEpisodes] = useState([]);
     const [currentEpisode, setCurrentEpisode] = useState(null); // ตอนที่กำลังอ่าน
     
-    // จำลองระบบจำว่าตอนไหนถูกปลดล็อกแล้วบ้าง (ของจริงควรเซฟลง Database)
+    // จำลองระบบจำว่าตอนไหนถูกปลดล็อกแล้วบ้าง
     const [unlockedEpisodes, setUnlockedEpisodes] = useState([]);
 
     useEffect(() => {
         fetchBookData();
-        fetchUnlockedEpisodes(); // 👈 เพิ่มบรรทัดนี้เพื่อเรียกดูตอนที่ซื้อแล้ว
+        fetchUnlockedEpisodes(); 
     }, [id]);
+
     const fetchUnlockedEpisodes = async () => {
         const token = localStorage.getItem('token');
         if (token) {
@@ -24,12 +25,13 @@ function Read() {
                 const res = await axios.get(`http://localhost:3001/unlocked/${id}`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
-                setUnlockedEpisodes(res.data); // เอาประวัติจากฐานข้อมูลมาใส่ในระบบ
+                setUnlockedEpisodes(res.data);
             } catch (error) {
                 console.error("Error fetching unlocked episodes", error);
             }
         }
     };
+
     const fetchBookData = async () => {
         try {
             // 1. ดึงข้อมูลหนังสือทั้งหมดมาเพื่อหาเล่มที่ตรงกับ ID
@@ -39,14 +41,15 @@ function Read() {
 
             // 2. ดึงรายการตอนของหนังสือเล่มนี้
             const epRes = await axios.get(`http://localhost:3001/books/${id}/episodes`);
-            setEpisodes(epRes.data);
+            // แนะนำให้เรียงลำดับตอนเสมอ เพื่อให้ปุ่ม Next/Prev ทำงานถูกต้อง
+            const sortedEpisodes = epRes.data.sort((a, b) => a.episode_number - b.episode_number);
+            setEpisodes(sortedEpisodes);
         } catch (error) {
             console.error("Error fetching data:", error);
         }
     };
 
     // ฟังก์ชันตรวจสอบว่าตอนนี้ "ฟรี" หรือ "ติดเหรียญ"
-    // ให้ฟรี 3 ตอนแรก (index 0, 1, 2)
     const isLocked = (index, epId) => {
         if (index < 3) return false; // 3 ตอนแรกฟรี
         if (unlockedEpisodes.includes(epId)) return false; // ปลดล็อกแล้ว
@@ -65,22 +68,24 @@ function Read() {
             const confirmBuy = window.confirm(`ตอนนี้ติดเหรียญ 🪙\nต้องการใช้ 5 เหรียญเพื่อปลดล็อก "${ep.title}" หรือไม่?`);
             if (confirmBuy) {
                 try {
-                    // 🔻 ส่งคำสั่งไปหักเหรียญและบันทึกลงฐานข้อมูล 🔻
                     const res = await axios.post('http://localhost:3001/unlock', {
                         bookId: id,
                         episodeId: ep.id,
-                        coinCost: 5 // ราคา 5 เหรียญ (ถ้าอนาคตมีราคาแต่ละตอนไม่เท่ากัน สามารถดึงจาก ep.price ได้)
+                        coinCost: 5 
                     }, {
                         headers: { Authorization: `Bearer ${token}` }
                     });
 
-                    // ถ้าผ่าน (ซื้อสำเร็จ)
-                    setUnlockedEpisodes([...unlockedEpisodes, ep.id]); // ปลดล็อกในหน้าจอทันที
+                    // ซื้อสำเร็จ
+                    setUnlockedEpisodes([...unlockedEpisodes, ep.id]);
                     alert("ปลดล็อกสำเร็จ! ขอให้อ่านให้สนุกครับ 🎉");
+                    
+                    // เปิดให้อ่านเลยทันที
+                    setCurrentEpisode(ep);
+                    window.scrollTo(0, 0);
 
                 } catch (error) {
-                    // ถ้าไม่ผ่าน (เช่น เหรียญไม่พอ)
-                    alert(error.response?.data?.message || "เกิดข้อผิดพลาดในการปลดล็อก");
+                    alert(error.response?.data?.message || "เกิดข้อผิดพลาดในการปลดล็อก (เหรียญอาจไม่พอ)");
                 }
             }
         } else {
@@ -90,132 +95,202 @@ function Read() {
         }
     };
 
+    // --- ระบบปุ่มนำทาง (Navigation) ---
+    const getCurrentIndex = () => {
+        if (!currentEpisode) return -1;
+        return episodes.findIndex(ep => ep.id === currentEpisode.id);
+    };
+
+    const navigateEpisode = (direction) => {
+        const currentIndex = getCurrentIndex();
+        const targetIndex = currentIndex + direction;
+        if (targetIndex >= 0 && targetIndex < episodes.length) {
+            handleReadEpisode(episodes[targetIndex], targetIndex);
+        }
+    };
+
+    const hasPrev = getCurrentIndex() > 0;
+    const hasNext = getCurrentIndex() >= 0 && getCurrentIndex() < episodes.length - 1;
+
+
     // ฟังก์ชันเรนเดอร์เนื้อหา (แยกระหว่างนิยายกับมังงะ)
     const renderContent = () => {
         if (!currentEpisode) return null;
 
         if (book.category === "มังงะ") {
             try {
-                // มังงะเก็บเนื้อหาเป็น Array รูปภาพ (JSON String)
                 const images = JSON.parse(currentEpisode.content);
                 return (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#0a0a0a', padding: '20px 0', minHeight: '80vh' }}>
                         {images.map((img, idx) => (
-                            <img key={idx} src={img} alt={`page-${idx+1}`} style={{ maxWidth: '100%', height: 'auto', display: 'block' }} />
+                            <img key={idx} src={img} alt={`page-${idx+1}`} style={{ maxWidth: '100%', height: 'auto', display: 'block', marginBottom: '10px', boxShadow: '0 5px 15px rgba(0,0,0,0.5)' }} />
                         ))}
                     </div>
                 );
             } catch (e) {
-                return <p style={{ color: 'red', textAlign: 'center' }}>เกิดข้อผิดพลาดในการโหลดรูปภาพมังงะ</p>;
+                return <div style={{ padding: '50px', textAlign: 'center', color: '#ff4e63', background: '#111' }}>เกิดข้อผิดพลาดในการโหลดรูปภาพมังงะ</div>;
             }
         } else {
-            // นิยายเก็บเป็นข้อความปกติ
             return (
-                <div style={{ padding: '20px', lineHeight: '1.8', fontSize: '18px', color: '#333', whiteSpace: 'pre-wrap' }}>
-                    {currentEpisode.content}
+                <div style={{ padding: '40px 30px', minHeight: '60vh', background: '#fff' }}>
+                    <div style={{ maxWidth: '800px', margin: '0 auto', lineHeight: '1.9', fontSize: '18px', color: '#1a1a1a', whiteSpace: 'pre-wrap', fontFamily: 'Sarabun, sans-serif' }}>
+                        {currentEpisode.content}
+                    </div>
                 </div>
             );
         }
     };
 
-    if (!book) return <div style={{ textAlign: 'center', marginTop: '50px' }}>กำลังโหลดข้อมูล...</div>;
+    if (!book) return <div style={{ textAlign: 'center', padding: '100px', fontSize: '18px', color: '#666' }}>กำลังโหลดข้อมูล... <i className="fas fa-spinner fa-spin"></i></div>;
+
+    // Styles
+    const btnStyle = { padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' };
 
     return (
-        <div style={{ maxWidth: '800px', margin: '0 auto', fontFamily: 'Sarabun, sans-serif', padding: '20px' }}>
+        <div style={{ background: '#f0f2f5', minHeight: '100vh', fontFamily: 'Kanit, sans-serif', paddingBottom: '40px' }}>
             
-            {/* 🔴 โหมดกำลังอ่านเนื้อหา */}
+            {/* 🔴 โหมดกำลังอ่านเนื้อหา (Reading View) */}
             {currentEpisode ? (
-                <div style={{ background: '#fff', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
-                    <div style={{ padding: '15px 20px', background: '#f8f9fa', borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ maxWidth: book.category === 'มังงะ' ? '1200px' : '900px', margin: '0 auto', background: book.category === 'มังงะ' ? '#111' : '#fff', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', borderRadius: '12px', overflow: 'hidden', marginTop: '20px' }}>
+                    
+                    {/* แถบด้านบน */}
+                    <div style={{ padding: '15px 25px', background: '#fff', borderBottom: '1px solid #eaeaea', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 }}>
                         <button 
                             onClick={() => setCurrentEpisode(null)}
-                            style={{ background: 'none', border: '1px solid #ddd', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+                            style={{ ...btnStyle, background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}
+                            onMouseOver={(e) => e.target.style.background = '#e2e8f0'}
+                            onMouseOut={(e) => e.target.style.background = '#f1f5f9'}
                         >
-                            <i className="fas fa-arrow-left"></i> กลับไปหน้ารายการตอน
+                            <i className="fas fa-arrow-left"></i> สารบัญ
                         </button>
-                        <h3 style={{ margin: 0, color: '#333' }}>ตอนที่ {currentEpisode.episode_number}: {currentEpisode.title}</h3>
+                    </div>
+
+                    {/* Header ข้อมูลตอน */}
+                    <div style={{ padding: '25px', background: '#fff' }}>
+                        <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                            <div style={{ borderBottom: '1px dashed #cbd5e1', paddingBottom: '15px', marginBottom: '15px' }}>
+                                <h2 style={{ margin: '0 0 8px 0', color: '#0f172a', fontSize: '24px' }}>{book.title}</h2>
+                                <p style={{ margin: 0, color: '#64748b' }}><i className="fas fa-pen-nib"></i> ผู้แต่ง: {book.author}</p>
+                            </div>
+                            <div>
+                                <h3 style={{ margin: '0 0 10px 0', color: '#334155', fontSize: '18px' }}>
+                                    <span style={{ color: '#ff4e63' }}>📍 ตอนที่ {currentEpisode.episode_number} :</span> {currentEpisode.title}
+                                </h3>
+                                <p style={{ margin: 0, color: '#64748b', fontSize: '14px', lineHeight: '1.6', background: '#fff', padding: '10px 15px', borderRadius: '8px', borderLeft: '4px solid #ff4e63' }}>
+                                    {book.description || "ขอให้สนุกกับการอ่านในตอนนี้ครับ!"}
+                                </p>
+                            </div>
+                        </div>
                     </div>
                     
-                    {/* แสดงเนื้อหานิยาย หรือ รูปมังงะ */}
-                    <div style={{ minHeight: '50vh', background: book.category === 'มังงะ' ? '#222' : '#fff' }}>
+                    {/* เนื้อหา */}
+                    <div style={{ borderTop: '1px solid #eee' }}>
                         {renderContent()}
                     </div>
 
-                    <div style={{ padding: '20px', textAlign: 'center', background: '#f8f9fa', borderTop: '1px solid #ddd' }}>
+                    {/* Footer นำทาง */}
+                    <div style={{ padding: '20px 30px', background: '#fff', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <button 
-                            onClick={() => setCurrentEpisode(null)}
-                            style={{ background: '#ff4e63', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
+                            onClick={() => navigateEpisode(-1)}
+                            disabled={!hasPrev}
+                            style={{ ...btnStyle, background: hasPrev ? '#f1f5f9' : '#f8f9fa', color: hasPrev ? '#333' : '#ccc' }}
                         >
-                            จบตอน
+                            <i className="fas fa-chevron-left"></i> ตอนก่อนหน้า
+                        </button>
+
+                        <button onClick={() => setCurrentEpisode(null)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontWeight: 'bold' }}>
+                            <i className="fas fa-list"></i> สารบัญ
+                        </button>
+
+                        <button 
+                            onClick={() => navigateEpisode(1)}
+                            disabled={!hasNext}
+                            style={{ ...btnStyle, background: hasNext ? '#ff4e63' : '#f8f9fa', color: hasNext ? '#fff' : '#ccc' }}
+                        >
+                            ตอนถัดไป <i className="fas fa-chevron-right"></i>
                         </button>
                     </div>
                 </div>
             ) : (
                 
                 /* 🔵 โหมดหน้ารายการตอน (Table of Contents) */
-                <div style={{ background: '#fff', padding: '30px', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                    <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', marginBottom: '20px', fontSize: '16px' }}>
-                        <i className="fas fa-home"></i> กลับหน้าหลัก
-                    </button>
-                    
-                    <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
-                        <img src={book.image} alt="cover" style={{ width: '120px', height: '170px', objectFit: 'cover', borderRadius: '6px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }} />
-                        <div>
-                            <span style={{ background: '#ffe4e6', color: '#ff4e63', padding: '3px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>{book.category}</span>
-                            <h1 style={{ margin: '10px 0 5px 0', fontSize: '24px', color: '#333' }}>{book.title}</h1>
-                            <p style={{ color: '#666', margin: 0 }}>ผู้แต่ง: {book.author}</p>
-                            <p style={{ color: '#888', fontSize: '14px', marginTop: '10px' }}>มีทั้งหมด {episodes.length} ตอน</p>
+                <div style={{ maxWidth: '1000px', margin: '30px auto', padding: '0 20px' }}>
+                    <div style={{ background: '#fff', padding: '30px', borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
+                        <button onClick={() => navigate('/')} style={{ background: '#f8f9fa', border: 'none', padding: '8px 15px', borderRadius: '8px', color: '#555', cursor: 'pointer', marginBottom: '25px', fontWeight: 'bold' }}>
+                            <i className="fas fa-home"></i> กลับหน้าหลัก
+                        </button>
+                        
+                        {/* Hero Section ข้อมูลหนังสือ */}
+                        <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap', marginBottom: '40px', background: '#f8fafc', padding: '25px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                            <img src={book.image} alt="cover" style={{ width: '160px', height: '230px', objectFit: 'cover', borderRadius: '8px', boxShadow: '0 8px 16px rgba(0,0,0,0.15)' }} />
+                            <div style={{ flex: 1, minWidth: '300px' }}>
+                                <span style={{ background: '#ff4e63', color: '#fff', padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold' }}>{book.category}</span>
+                                <h1 style={{ margin: '15px 0 10px 0', fontSize: '32px', color: '#0f172a' }}>{book.title}</h1>
+                                <p style={{ color: '#475569', fontSize: '16px', margin: '0 0 10px 0' }}><i className="fas fa-user-edit"></i> ผู้แต่ง: {book.author}</p>
+                                <p style={{ color: '#64748b', fontSize: '15px', lineHeight: '1.6', background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #eee' }}>{book.description}</p>
+                            </div>
                         </div>
-                    </div>
 
-                    <h2 style={{ borderBottom: '2px solid #ff4e63', paddingBottom: '10px', marginBottom: '20px' }}>รายการตอนทั้งหมด</h2>
-                    
-                    {episodes.length === 0 ? (
-                        <p style={{ textAlign: 'center', color: '#888' }}>ยังไม่มีเนื้อหาในหนังสือเล่มนี้</p>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {episodes.map((ep, index) => {
-                                const locked = isLocked(index, ep.id);
-                                return (
-                                    <div 
-                                        key={ep.id} 
-                                        onClick={() => handleReadEpisode(ep, index)}
-                                        style={{ 
-                                            display: 'flex', 
-                                            justifyContent: 'space-between', 
-                                            padding: '15px 20px', 
-                                            background: locked ? '#f9f9f9' : '#fff',
-                                            border: '1px solid #eee', 
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            transition: '0.2s',
-                                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
-                                        }}
-                                        onMouseOver={(e) => e.currentTarget.style.borderColor = '#ff4e63'}
-                                        onMouseOut={(e) => e.currentTarget.style.borderColor = '#eee'}
-                                    >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                                            <span style={{ fontSize: '16px', fontWeight: 'bold', color: locked ? '#999' : '#333' }}>
-                                                ตอนที่ {ep.episode_number}
-                                            </span>
-                                            <span style={{ color: locked ? '#888' : '#555' }}>{ep.title}</span>
-                                        </div>
-                                        <div>
-                                            {locked ? (
-                                                <span style={{ color: '#ff9800', fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                                    <i className="fas fa-lock"></i> 5 🪙
-                                                </span>
-                                            ) : (
-                                                <span style={{ color: '#4CAF50', fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                                    {index < 3 ? 'อ่านฟรี' : '🔓 ปลดล็อกแล้ว'}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #ff4e63', paddingBottom: '10px', marginBottom: '25px' }}>
+                            <h2 style={{ margin: 0, color: '#0f172a' }}><i className="fas fa-list-ul" style={{ color: '#ff4e63', marginRight: '8px' }}></i> รายการตอน</h2>
+                            <span style={{ background: '#ffe4e6', color: '#ff4e63', padding: '5px 15px', borderRadius: '20px', fontWeight: 'bold', fontSize: '14px' }}>ทั้งหมด {episodes.length} ตอน</span>
                         </div>
-                    )}
+                        
+                        {episodes.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '50px', color: '#888', background: '#f8f9fa', borderRadius: '12px' }}>
+                                <i className="fas fa-folder-open" style={{ fontSize: '40px', marginBottom: '15px', color: '#ddd' }}></i>
+                                <p>ยังไม่มีเนื้อหาในหนังสือเล่มนี้</p>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '15px' }}>
+                                {episodes.map((ep, index) => {
+                                    const locked = isLocked(index, ep.id);
+                                    return (
+                                        <div 
+                                            key={ep.id} 
+                                            onClick={() => handleReadEpisode(ep, index)}
+                                            style={{ 
+                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                                padding: '18px 20px', 
+                                                background: locked ? '#fafafa' : '#fff',
+                                                border: locked ? '1px solid #eaeaea' : '1px solid #e0e7ff', 
+                                                borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
+                                                boxShadow: locked ? 'none' : '0 2px 8px rgba(0,0,0,0.04)'
+                                            }}
+                                            onMouseOver={(e) => {
+                                                e.currentTarget.style.borderColor = '#ff4e63';
+                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                            }}
+                                            onMouseOut={(e) => {
+                                                e.currentTarget.style.borderColor = locked ? '#eaeaea' : '#e0e7ff';
+                                                e.currentTarget.style.transform = 'translateY(0)';
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <span style={{ fontSize: '13px', fontWeight: 'bold', color: locked ? '#94a3b8' : '#ff4e63' }}>
+                                                    ตอนที่ {ep.episode_number}
+                                                </span>
+                                                <span style={{ fontSize: '16px', color: locked ? '#64748b' : '#1e293b', fontWeight: locked ? 'normal' : '500' }}>
+                                                    {ep.title}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                {locked ? (
+                                                    <span style={{ background: '#fff', border: '1px solid #ffcc80', color: '#f57c00', padding: '6px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <i className="fas fa-lock"></i> 5 🪙
+                                                    </span>
+                                                ) : (
+                                                    <span style={{ background: '#e8f5e9', color: '#2e7d32', padding: '6px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        {index < 3 ? <><i className="fas fa-gift"></i> อ่านฟรี</> : <><i className="fas fa-unlock"></i> ซื้อแล้ว</>}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
