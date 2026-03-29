@@ -63,6 +63,15 @@ const authenticateToken = (req, res, next) => {
         next();
     });
 };
+//ตารางเก็บประวัติการอ่าน
+db.run(`CREATE TABLE IF NOT EXISTS reading_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    book_id INTEGER NOT NULL,
+    max_episode_number INTEGER NOT NULL DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, book_id)
+)`);
 // ================= DATABASE SETUP =================
 db.run(`CREATE TABLE IF NOT EXISTS post_likes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1288,6 +1297,60 @@ app.post('/posts/:id/comment', verifyToken, (req, res) => {
     db.run("INSERT INTO post_comments (post_id, user_id, comment_text) VALUES (?, ?, ?)", [postId, userId, text], function(err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ message: "คอมเมนต์สำเร็จ", commentId: this.lastID });
+    });
+});
+// 1. [POST] อัปเดตประวัติการอ่าน (เรียกตอน User กดเข้าไปอ่านแต่ละตอน)
+// ==========================================
+// 📚 API สำหรับระบบจดจำประวัติการอ่าน
+// ==========================================
+
+// 1. [POST] อัปเดตประวัติการอ่าน (เรียกตอน User กดเข้าไปอ่านแต่ละตอน)
+app.post('/history/update', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    const { book_id, episode_number } = req.body;
+
+    // เช็คว่าเคยมีประวัติการอ่านเรื่องนี้ไหม
+    db.get("SELECT max_episode_number FROM reading_history WHERE user_id = ? AND book_id = ?", [userId, book_id], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        if (row) {
+            // กรณีเคยอ่านแล้ว -> เช็คว่า "ตอนที่กำลังอ่าน" เลขเยอะกว่า "ตอนที่อ่านไกลสุด (max)" ไหม?
+            if (Number(episode_number) > Number(row.max_episode_number)) {
+                // ถ้าเยอะกว่า ให้อัปเดต max_episode_number เป็นเลขใหม่
+                db.run("UPDATE reading_history SET max_episode_number = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND book_id = ?",
+                    [episode_number, userId, book_id], function(err2) {
+                        if (err2) return res.status(500).json({ error: err2.message });
+                        return res.json({ message: "อัปเดตตอนที่อ่านไกลสุดเรียบร้อย", max_episode_number: episode_number });
+                    });
+            } else {
+                // ถ้าน้อยกว่า (กลับไปอ่านตอนเก่า) -> ไม่อัปเดตเลข max แต่แค่อัปเดตเวลา updated_at เฉยๆ
+                db.run("UPDATE reading_history SET updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND book_id = ?",
+                    [userId, book_id], function(err2) {
+                        if (err2) return res.status(500).json({ error: err2.message });
+                        return res.json({ message: "อัปเดตเวลาอ่านล่าสุด (ตอนไกลสุดยังเท่าเดิม)", max_episode_number: row.max_episode_number });
+                    });
+            }
+        } else {
+            // กรณีเพิ่งเคยอ่านเรื่องนี้ครั้งแรก -> สร้าง Record ใหม่
+            db.run("INSERT INTO reading_history (user_id, book_id, max_episode_number) VALUES (?, ?, ?)",
+                [userId, book_id, episode_number], function(err2) {
+                    if (err2) return res.status(500).json({ error: err2.message });
+                    return res.json({ message: "สร้างประวัติการอ่านใหม่", max_episode_number: episode_number });
+                });
+        }
+    });
+});
+
+// 2. [GET] ดึงเลขตอนที่อ่านไกลที่สุดของหนังสือแต่ละเล่ม
+app.get('/history/:bookId', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    const bookId = req.params.bookId;
+
+    db.get("SELECT max_episode_number FROM reading_history WHERE user_id = ? AND book_id = ?", [userId, bookId], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        
+        // ถ้ามีประวัติก็ส่งเลขนั้นไป ถ้าไม่มีส่ง 0
+        res.json({ max_episode_number: row ? row.max_episode_number : 0 });
     });
 });
 // ================= START SERVER =================

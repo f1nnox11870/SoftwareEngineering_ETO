@@ -16,8 +16,13 @@ function Read() {
     useEffect(() => {
         fetchBookData();
         fetchUnlockedEpisodes(); 
+        fetchReadingHistory();
     }, [id]);
-
+    useEffect(() => {
+        if (currentEpisode) {
+            updateReadingHistory(currentEpisode.episode_number);
+        }
+    }, [currentEpisode]);
     const fetchUnlockedEpisodes = async () => {
         const token = localStorage.getItem('token');
         if (token) {
@@ -112,7 +117,45 @@ function Read() {
     const hasPrev = getCurrentIndex() > 0;
     const hasNext = getCurrentIndex() >= 0 && getCurrentIndex() < episodes.length - 1;
 
+    // 🌟 State สำหรับระบบจดจำการอ่าน 🌟
+    const [maxEpRead, setMaxEpRead] = useState(0);
 
+    // 🌟 ดึงประวัติการอ่าน (ตอนที่อ่านไกลที่สุด) 🌟
+    const fetchReadingHistory = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        try {
+            const res = await axios.get(`http://localhost:3001/history/${id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setMaxEpRead(res.data.max_episode_number || 0);
+        } catch (error) {
+            console.error("Error fetching history", error);
+        }
+    };
+
+    // 🌟 บันทึกประวัติการอ่านเมื่อเปิดอ่านตอนใหม่ 🌟
+    const updateReadingHistory = async (epNum) => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        try {
+            await axios.post('http://localhost:3001/history/update', {
+                book_id: id,
+                episode_number: epNum
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            // อัปเดตตัวเลขใน State ทันทีถ้าตอนที่เพิ่งกดอ่านเลขเยอะกว่าของเดิม
+            if (Number(epNum) > maxEpRead) {
+                setMaxEpRead(Number(epNum));
+            }
+        } catch (error) {
+            console.error("Error updating history", error);
+        }
+    };
     // ฟังก์ชันเรนเดอร์เนื้อหา (แยกระหว่างนิยายกับมังงะ)
     const renderContent = () => {
         if (!currentEpisode) return null;
@@ -245,6 +288,9 @@ function Read() {
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '15px' }}>
                                 {episodes.map((ep, index) => {
                                     const locked = isLocked(index, ep.id);
+                                    // 🌟 เช็คว่าตอนนี้อ่านไปหรือยัง (ถ้าน้อยกว่าหรือเท่ากับตอนที่อ่านไกลสุด = อ่านแล้ว)
+                                    const isRead = Number(ep.episode_number) <= maxEpRead;
+
                                     return (
                                         <div 
                                             key={ep.id} 
@@ -255,7 +301,8 @@ function Read() {
                                                 background: locked ? '#fafafa' : '#fff',
                                                 border: locked ? '1px solid #eaeaea' : '1px solid #e0e7ff', 
                                                 borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
-                                                boxShadow: locked ? 'none' : '0 2px 8px rgba(0,0,0,0.04)'
+                                                boxShadow: locked ? 'none' : '0 2px 8px rgba(0,0,0,0.04)',
+                                                opacity: isRead ? 0.8 : 1 // 🌟 ถ้าอ่านแล้วให้สีจางลงนิดนึงเพื่อแยกความแตกต่าง
                                             }}
                                             onMouseOver={(e) => {
                                                 e.currentTarget.style.borderColor = '#ff4e63';
@@ -267,8 +314,14 @@ function Read() {
                                             }}
                                         >
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                <span style={{ fontSize: '13px', fontWeight: 'bold', color: locked ? '#94a3b8' : '#ff4e63' }}>
+                                                <span style={{ fontSize: '13px', fontWeight: 'bold', color: locked ? '#94a3b8' : '#ff4e63', display: 'flex', alignItems: 'center' }}>
                                                     ตอนที่ {ep.episode_number}
+                                                    {/* 🌟 ป้ายกำกับว่า "อ่านแล้ว" สีเขียว */}
+                                                    {isRead && (
+                                                        <span style={{ marginLeft: '10px', color: '#10b981', background: '#d1fae5', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }}>
+                                                            <i className="fas fa-check-circle"></i> อ่านแล้ว
+                                                        </span>
+                                                    )}
                                                 </span>
                                                 <span style={{ fontSize: '16px', color: locked ? '#64748b' : '#1e293b', fontWeight: locked ? 'normal' : '500' }}>
                                                     {ep.title}
