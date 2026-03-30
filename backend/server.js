@@ -654,10 +654,72 @@ app.put('/profile/image', verifyToken, (req, res) => {
 });
 
 app.get('/books', (req, res) => {
-    const sql = `SELECT * FROM books ORDER BY created_at DESC`;
-    db.all(sql, [], (err, rows) => {
+    const { category, subcategory } = req.query;
+    let sql = `SELECT * FROM books`;
+    const params = [];
+    const conditions = [];
+
+    if (category) {
+        // map หมวดใหญ่ → ค่าใน DB
+        const categoryMap = {
+            'นิยาย': ['นิยาย', 'นิยายรักโรแมนติก', 'นิยายวาย', 'นิยายแฟนตาซี', 'นิยายสืบสวน',
+                       'นิยายกำลังภายใน', 'ไลท์โนเวล', 'วรรณกรรมทั่วไป', 'นิยายยูริ', 'กวีนิพนธ์', 'แฟนเฟิค'],
+            'การ์ตูน/มังงะ': ['การ์ตูน', 'มังงะ', 'การ์ตูนโรแมนติก', 'การ์ตูนแอคชั่น',
+                               'การ์ตูนแฟนตาซี', 'การ์ตูนตลก', 'การ์ตูนสยองขวัญ', 'การ์ตูนกีฬา',
+                               'การ์ตูนวาย', 'การ์ตูนยูริ']
+        };
+        if (subcategory) {
+            conditions.push(`category = ?`);
+            params.push(subcategory);
+        } else if (categoryMap[category]) {
+            const placeholders = categoryMap[category].map(() => '?').join(',');
+            conditions.push(`category IN (${placeholders})`);
+            params.push(...categoryMap[category]);
+        } else {
+            conditions.push(`category = ?`);
+            params.push(category);
+        }
+    }
+
+    if (conditions.length > 0) sql += ` WHERE ` + conditions.join(' AND ');
+    sql += ` ORDER BY created_at DESC`;
+
+    db.all(sql, params, (err, rows) => {
         if (err) return res.status(500).json({ message: 'Database error' });
-        res.json(rows); 
+        res.json(rows);
+    });
+});
+
+// ── [GET] ดึง subcategory จริงจาก DB (DISTINCT category values) ──────────────
+app.get('/books/categories', (req, res) => {
+    const novelParents = ['นิยาย', 'นิยายรักโรแมนติก', 'นิยายวาย', 'นิยายแฟนตาซี', 'นิยายสืบสวน',
+                          'นิยายกำลังภายใน', 'ไลท์โนเวล', 'วรรณกรรมทั่วไป', 'นิยายยูริ', 'กวีนิพนธ์', 'แฟนเฟิค'];
+    const mangaParents = ['การ์ตูน', 'มังงะ', 'การ์ตูนโรแมนติก', 'การ์ตูนแอคชั่น',
+                          'การ์ตูนแฟนตาซี', 'การ์ตูนตลก', 'การ์ตูนสยองขวัญ', 'การ์ตูนกีฬา',
+                          'การ์ตูนวาย', 'การ์ตูนยูริ'];
+
+    const novelPh  = novelParents.map(() => '?').join(',');
+    const mangaPh  = mangaParents.map(() => '?').join(',');
+
+    const sql = `
+        SELECT category, COUNT(*) as count FROM books
+        WHERE category IN (${novelPh}) OR category IN (${mangaPh})
+        GROUP BY category
+        HAVING count > 0
+        ORDER BY category
+    `;
+
+    db.all(sql, [...novelParents, ...mangaParents], (err, rows) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+
+        const novelSubs = rows
+            .filter(r => novelParents.includes(r.category))
+            .map(r => ({ name: r.category, count: r.count }));
+        const mangaSubs = rows
+            .filter(r => mangaParents.includes(r.category))
+            .map(r => ({ name: r.category, count: r.count }));
+
+        res.json({ novel: novelSubs, manga: mangaSubs });
     });
 });
 
@@ -1353,6 +1415,71 @@ app.get('/history/:bookId', verifyToken, (req, res) => {
         res.json({ max_episode_number: row ? row.max_episode_number : 0 });
     });
 });
+// ── ตารางเก็บประวัติว่า user "เห็น" notification ตอนใหม่ไปแล้วหรือยัง ──────
+db.run(`CREATE TABLE IF NOT EXISTS seen_chapter_notifs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    episode_id INTEGER NOT NULL,
+    seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, episode_id)
+)`);
+
+// ── [GET] ดึงตอนใหม่ของหนังสือที่ user ซื้อหรือกดใจไว้ (ยังไม่เคยเห็น) ──
+// GET /notifications/new-chapters
+app.get('/notifications/new-chapters', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    
+    // อัปเดตคำสั่ง SQL 
+    const sql = `
+        SELECT e.id as episode_id, e.book_id, e.title as chapter_title, e.ep_number as chapter_number,
+               b.title as book_title, e.created_at as published_at
+        FROM episodes e
+        JOIN books b ON e.book_id = b.id
+        WHERE (
+            -- หนังสือที่ผู้ใช้อ่าน/ซื้อ
+            e.book_id IN (SELECT DISTINCT book_id FROM purchased_episodes WHERE user_id = ?)
+            OR
+            -- หนังสือที่ผู้ใช้กดหัวใจ
+            e.book_id IN (SELECT book_id FROM favorites WHERE user_id = ?)
+        )
+        AND e.created_at >= datetime('now', '-7 days')
+        -- 👇 เพิ่มเงื่อนไขนี้: เอาเฉพาะตอนที่ User ยังไม่เคยกดอ่าน (ไม่มีใน seen_chapter_notifs) 👇
+        AND e.id NOT IN (SELECT episode_id FROM seen_chapter_notifs WHERE user_id = ?)
+        ORDER BY e.created_at DESC
+        LIMIT 20
+    `;
+
+    // สังเกตว่าผมเพิ่ม userId เข้าไปอีก 1 ตัวใน Array เพื่อใช้กับเงื่อนไข NOT IN ด้านบน
+    db.all(sql, [userId, userId, userId], (err, rows) => {
+        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+        res.json(rows);
+    });
+});
+
+// ── [POST] มาร์กว่า user "อ่าน / เห็น" notification ตอนนั้นแล้ว ──────────
+// POST /notifications/new-chapters/seen  body: { episodeIds: [1,2,3] }
+app.post('/notifications/new-chapters/seen', verifyToken, (req, res) => {
+    const userId = req.user.id;
+    const { episodeIds } = req.body;
+
+    if (!Array.isArray(episodeIds) || episodeIds.length === 0) {
+        return res.status(400).json({ message: 'episodeIds ต้องเป็น array และต้องไม่ว่างเปล่า' });
+    }
+
+    const placeholders = episodeIds.map(() => '(?, ?)').join(', ');
+    const values = [];
+    episodeIds.forEach(id => values.push(userId, id));
+
+    db.run(
+        `INSERT OR IGNORE INTO seen_chapter_notifs (user_id, episode_id) VALUES ${placeholders}`,
+        values,
+        function(err) {
+            if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+            res.json({ message: 'บันทึกสถานะแจ้งเตือนเรียบร้อย', marked: episodeIds.length });
+        }
+    );
+});
+
 // ================= START SERVER =================
 app.listen(port, () => {
     console.log(`🚀 Server is running on http://localhost:${port}`);

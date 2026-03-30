@@ -1,40 +1,51 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import '../assets/cart.css'; 
+import '../assets/cart.css';
+import Navbar from './navbar';
 
-const MENU_ITEMS = [
-    { label: 'นิยาย',        subs: ['นิยายรักโรแมนติก','นิยายวาย','นิยายแฟนตาซี','นิยายสืบสวน','นิยายกำลังภายใน','ไลท์โนเวล','วรรณกรรมทั่วไป','นิยายยูริ','กวีนิพนธ์','แฟนเฟิค'] },
-    { label: 'การ์ตูน',      subs: [] },
-    { label: 'อีบุ๊กทั่วไป', subs: [] },
-    { label: 'นิตยสาร',      subs: [] },
-    { label: 'หนังสือพิมพ์', subs: [] },
-    { label: 'อีบุ๊กจัดชุด', subs: [] },
+const MAIN_CATEGORIES = [
+    { label: 'นิยาย',           key: 'novel', tab: 'นิยาย'          },
+    { label: 'การ์ตูน(มังงะ)', key: 'manga', tab: 'การ์ตูน/มังงะ'  },
 ];
-const ROMANCE_SUBS = ['นิยายรักวัยรุ่น','นิยายรักแฟนตาซี','นิยายรักจีนโบราณ','นิยายรักจีนปัจจุบัน','นิยายรักกำลังภายใน','นิยายรักผู้ใหญ่'];
 
-const MOCK_NOTIFICATIONS = [
-    { id: 1, icon: '🪙', title: 'เติมเหรียญสำเร็จ',   desc: 'คุณได้รับ 150 เหรียญเรียบร้อยแล้ว',           time: '5 นาทีที่แล้ว',    unread: true  },
-    { id: 2, icon: '🔥', title: 'โปรโมชั่นพิเศษ!',    desc: 'ซื้อเหรียญวันนี้รับโบนัสพิเศษสูงสุด 30%',     time: '1 ชั่วโมงที่แล้ว', unread: true  },
-    { id: 3, icon: '📚', title: 'หนังสือใหม่มาแล้ว',  desc: 'Record of Ragnarok เล่ม 12 วางจำหน่ายแล้ว',  time: '3 ชั่วโมงที่แล้ว', unread: false },
-    { id: 4, icon: '🎉', title: 'ยินดีต้อนรับ!',       desc: 'สมัครสมาชิกสำเร็จ รับเหรียญฟรี 20 เหรียญ',   time: 'เมื่อวาน',          unread: false },
-    { id: 5, icon: '💳', title: 'ประวัติการซื้อ',      desc: 'คุณซื้อ "นิยายรักสุดขอบฟ้า" เรียบร้อยแล้ว', time: '2 วันที่แล้ว',      unread: false },
-];
+function formatTime(dateStr) {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const min = Math.floor(diff / 60000);
+    if (min < 1)   return 'เมื่อกี้';
+    if (min < 60)  return `${min} นาทีที่แล้ว`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24)   return `${hr} ชั่วโมงที่แล้ว`;
+    const day = Math.floor(hr / 24);
+    if (day === 1) return 'เมื่อวาน';
+    if (day < 7)   return `${day} วันที่แล้ว`;
+    return new Date(dateStr).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+}
+function loadReadIds() {
+    try { return new Set(JSON.parse(localStorage.getItem('notif_read_ids') || '[]')); } catch { return new Set(); }
+}
+function saveReadId(id) {
+    try { const s = loadReadIds(); s.add(id); localStorage.setItem('notif_read_ids', JSON.stringify([...s].slice(-200))); } catch {}
+}
 
 function Cart() {
     const navigate = useNavigate();
-    const [cartItems, setCartItems] = useState([]);
-    const [cartCount, setCartCount] = useState(0);
+    const [cartItems, setCartItems]   = useState([]);
+    const [cartCount, setCartCount]   = useState(0);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [username, setUsername] = useState('');
-    const [role, setRole] = useState(null);
+    const [username, setUsername]     = useState('');
+    const [role, setRole]             = useState(null);
     const [profileImage, setProfileImage] = useState(null);
-    const [coins, setCoins] = useState(null);
-    const [megaOpen, setMegaOpen] = useState(false);
+    const [coins, setCoins]           = useState(null);
+    const [favoriteIds, setFavoriteIds] = useState([]);
+    const [navSearch, setNavSearch]   = useState('');
+    const [megaOpen, setMegaOpen]     = useState(false);
     const [hoveredMenu, setHoveredMenu] = useState(null);
+    const [dbCategories, setDbCategories] = useState({ novel: [], manga: [] });
     const [profileOpen, setProfileOpen] = useState(false);
-    const [notifOpen, setNotifOpen] = useState(false);
-    const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+    const [notifOpen, setNotifOpen]   = useState(false);
+    const [notifications, setNotifications] = useState([]);
 
     const megaRef    = useRef(null);
     const profileRef = useRef(null);
@@ -45,58 +56,46 @@ function Cart() {
         const token = localStorage.getItem('token');
         if (!token) return;
         try {
-            const res = await axios.get('http://localhost:3001/cart', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await axios.get('http://localhost:3001/cart', { headers: { Authorization: `Bearer ${token}` } });
             console.log("ข้อมูลในตะกร้า:", res.data);
             setCartItems(res.data);
             setCartCount(res.data.length);
-        } catch (err) {
-            console.error("Fetch cart error", err);
-        }
+        } catch (err) { console.error("Fetch cart error", err); }
     };
 
     useEffect(() => {
         const token = localStorage.getItem('token');
-        const user = localStorage.getItem('username');
+        const user  = localStorage.getItem('username');
         const savedRole = localStorage.getItem('role');
         if (token) {
             setIsLoggedIn(true);
             if (user) setUsername(user);
             if (savedRole) setRole(savedRole);
             fetchCart();
-        } else {
-            navigate('/');
-        }
+        } else { navigate('/'); }
     }, [navigate]);
 
-    // Fetch coins & profile image
     useEffect(() => {
-        const fetchCoins = async () => {
-            const token = localStorage.getItem('token');
-            if (!token) return;
+        axios.get('http://localhost:3001/books/categories').then(res => setDbCategories(res.data)).catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        if (!isLoggedIn) { setCoins(null); clearInterval(coinInterval.current); return; }
+        const token = localStorage.getItem('token');
+        const fetchProfile = async () => {
             try {
-                const res = await axios.get('http://localhost:3001/profile', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setCoins(res.data.coins ?? 0);
-                setProfileImage(res.data.image || null);
-            } catch {
-                setCoins(0);
-            }
+                const res = await axios.get('http://localhost:3001/profile', { headers: { Authorization: `Bearer ${token}` } });
+                setCoins(res.data.coins ?? 0); setProfileImage(res.data.image || null);
+            } catch { setCoins(0); }
         };
-        if (isLoggedIn) {
-            fetchCoins();
-            coinInterval.current = setInterval(fetchCoins, 30000);
-            return () => clearInterval(coinInterval.current);
-        } else {
-            setCoins(null);
-            clearInterval(coinInterval.current);
-        }
+        fetchProfile();
+        refreshNotifications(token);
+        axios.get('http://localhost:3001/favorites', { headers: { Authorization: `Bearer ${token}` } })
+            .then(res => setFavoriteIds(res.data.map(i => i.book_id))).catch(() => {});
+        coinInterval.current = setInterval(fetchProfile, 30000);
         return () => clearInterval(coinInterval.current);
     }, [isLoggedIn]);
 
-    // Close dropdowns on outside click
     useEffect(() => {
         const h = (e) => {
             if (megaRef.current    && !megaRef.current.contains(e.target))    setMegaOpen(false);
@@ -107,258 +106,96 @@ function Cart() {
         return () => document.removeEventListener('mousedown', h);
     }, []);
 
+    const refreshNotifications = async (token) => {
+        const headers = { Authorization: `Bearer ${token}` };
+        const readIds = loadReadIds();
+        try {
+            const [topupRes, histRes, newChapRes] = await Promise.all([
+                axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+                axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
+                axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+            ]);
+            const notifs = [];
+            newChapRes.data.forEach(c => {
+                const nid   = `newchap-${c.chapter_id}`;
+                const title = `มีตอนใหม่: ${c.book_title}`;
+                const desc  = `ตอนที่ ${c.chapter_number}${c.chapter_title ? ` — ${c.chapter_title}` : ''} เพิ่งเผยแพร่แล้ว`;
+                notifs.push({ id: nid, title, desc, time: formatTime(c.published_at), unread: !readIds.has(nid), tag: 'new_chapter', book_id: c.book_id });
+            });
+            topupRes.data.forEach(t => {
+                const nid   = `topup-${t.id}`;
+                const title = t.status === 'approved' ? `เติมเหรียญสำเร็จ +${Number(t.total_coins).toLocaleString()} เหรียญ`
+                    : t.status === 'rejected' ? 'คำขอเติมเหรียญถูกปฏิเสธ' : 'คำขอเติมเหรียญรอการตรวจสอบ';
+                const desc  = t.status === 'approved' ? `ชำระ ฿${t.amount} — รับ ${Number(t.total_coins).toLocaleString()} เหรียญแล้ว`
+                    : t.status === 'rejected' ? (t.note || 'กรุณาติดต่อฝ่ายสนับสนุน') : `แพ็กเกจ ฿${t.amount} — รอแอดมินตรวจสอบ`;
+                notifs.push({ id: nid, title, desc, time: formatTime(t.created_at), unread: !readIds.has(nid) && t.status === 'approved' });
+            });
+            histRes.data.slice(0, 8).forEach(h => {
+                const nid = `hist-${h.id}`;
+                notifs.push({ id: nid, title: h.type === 'book' ? 'ซื้อหนังสือสำเร็จ' : 'เติมเหรียญสำเร็จ', desc: h.title, time: formatTime(h.purchased_at), unread: false });
+            });
+            setNotifications(notifs.slice(0, 20));
+        } catch {}
+    };
+
     const unreadCount = notifications.filter(n => n.unread).length;
-    const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
-    const markOneRead = (id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
+    const markAllRead = () => setNotifications(prev => prev.map(n => { if (n.unread) saveReadId(n.id); return { ...n, unread: false }; }));
+    const markOneRead = (id) => {
+        saveReadId(id);
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
+        const notif = notifications.find(n => n.id === id);
+        if (notif?.tag === 'new_chapter' && notif.book_id) { setNotifOpen(false); navigate(`/read/${notif.book_id}`); }
+    };
 
     const removeItem = async (cartItemId) => {
         if (!window.confirm("คุณต้องการลบหนังสือเล่มนี้ใช่หรือไม่?")) return;
         const token = localStorage.getItem('token');
         try {
-            await axios.delete(`http://localhost:3001/cart/${cartItemId}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await axios.delete(`http://localhost:3001/cart/${cartItemId}`, { headers: { Authorization: `Bearer ${token}` } });
             fetchCart();
-        } catch (err) {
-            alert("ไม่สามารถลบสินค้าได้");
-        }
+        } catch (err) { alert("ไม่สามารถลบสินค้าได้"); }
     };
 
     const handleLogout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('username');
-        setIsLoggedIn(false);
-        setUsername('');
-        setProfileOpen(false);
-        setCoins(null);
-        setCartCount(0);
+        localStorage.removeItem('token'); localStorage.removeItem('username');
+        setIsLoggedIn(false); setUsername(''); setProfileOpen(false); setCoins(null); setCartCount(0);
         navigate('/');
     };
 
     const handleCheckout = async () => {
-    const token = localStorage.getItem('token');
-    
-    // ตรวจสอบเบื้องต้น
-    if (coins < totalPrice) {
-        alert(`เหรียญไม่พอ! คุณมี ${coins} แต่ต้องใช้ ${totalPrice} 🪙\nกรุณาไปเติมเหรียญก่อนครับ`);
-        navigate('/topup');
-        return;
-    }
+        const token = localStorage.getItem('token');
+        if (coins < totalPrice) {
+            alert(`เหรียญไม่พอ! คุณมี ${coins} แต่ต้องใช้ ${totalPrice} 🪙\nกรุณาไปเติมเหรียญก่อนครับ`);
+            navigate('/topup'); return;
+        }
+        if (!window.confirm(`ยืนยันการชำระเงินจำนวน ${totalPrice.toLocaleString()} 🪙 ใช่หรือไม่?`)) return;
+        try {
+            const res = await axios.post('http://localhost:3001/cart/checkout', {}, { headers: { Authorization: `Bearer ${token}` } });
+            alert(res.data.message);
+            setCoins(res.data.remainingCoins); setCartItems([]); setCartCount(0);
+        } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาดในการชำระเงิน"); }
+    };
 
-    if (!window.confirm(`ยืนยันการชำระเงินจำนวน ${totalPrice.toLocaleString()} 🪙 ใช่หรือไม่?`)) return;
-
-    try {
-        const res = await axios.post('http://localhost:3001/cart/checkout', {}, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-
-        alert(res.data.message);
-        
-        // อัปเดต State ในหน้าเว็บ
-        setCoins(res.data.remainingCoins);
-        setCartItems([]);
-        setCartCount(0);
-        
-        // ส่งไปหน้าชั้นหนังสือ หรือ หน้าประวัติ
-        //navigate('/history'); 
-    } catch (err) {
-        const errorMsg = err.response?.data?.message || "เกิดข้อผิดพลาดในการชำระเงิน";
-        alert(errorMsg);
-    }
-};
     const totalPrice = cartItems.reduce((sum, item) => sum + (item.price || 0), 0);
 
     return (
-        <div className="cart-page">
-            {/* ═════════ 1. NAVBAR (เหมือน Home.jsx) ═════════ */}
-            <header className="navbar">
-                <div className="navbar-inner">
+        <div className="home-page shelf-page">
+            <Navbar/>
 
-                    <div className="nav-left">
-                        <div className="nav-logo" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
-                            <div className="nav-logo-box">
-                                <i className="fas fa-book-open"></i>
-                            </div>
-                        </div>
-
-                        <div className="mega-wrap" ref={megaRef}>
-                            <button className="nav-hamburger" onClick={() => setMegaOpen(v => !v)}>
-                                <i className="fas fa-bars"></i>
-                                <span>เลือกหมวด</span>
-                            </button>
-                            {megaOpen && (
-                                <div className="mega-menu">
-                                    <div className="mega-col">
-                                        {MENU_ITEMS.map(item => (
-                                            <div key={item.label}
-                                                className={`mega-item ${hoveredMenu === item.label ? 'hovered' : ''}`}
-                                                onMouseEnter={() => setHoveredMenu(item.label)}>
-                                                <span>{item.label}</span>
-                                                {item.subs.length > 0 && <i className="fas fa-chevron-right"></i>}
-                                            </div>
-                                        ))}
-                                    </div>
-                                    {hoveredMenu === 'นิยาย' && (
-                                        <div className="mega-col">
-                                            <div className="mega-item hovered">
-                                                <span>นิยายรักโรแมนติก</span>
-                                                <i className="fas fa-chevron-right"></i>
-                                            </div>
-                                            {MENU_ITEMS[0].subs.slice(1).map(s => (
-                                                <div key={s} className="mega-item"><span>{s}</span></div>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {hoveredMenu === 'นิยาย' && (
-                                        <div className="mega-col">
-                                            {ROMANCE_SUBS.map(s => (
-                                                <div key={s} className="mega-item"><span>{s}</span></div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="nav-center">
-                        <div className="nav-search">
-                            <input type="text" placeholder="วันนี้อ่านอะไรดี?" />
-                            <button><i className="fas fa-search"></i></button>
-                        </div>
-                    </div>
-
-                    <div className="nav-right">
-                        {isLoggedIn ? (
-                            <>
-                                {role === 'admin' && (
-                                    <button
-                                        className="btn-admin"
-                                        onClick={() => navigate('/admin')}
-                                    >
-                                        จัดการเนื้อหา
-                                    </button>
-                                )}
-                                <div className="notif-wrap" ref={notifRef}>
-                                    <button className="nav-icon-btn pos-rel" onClick={() => { setNotifOpen(v => !v); setProfileOpen(false); }}>
-                                        <i className="fas fa-bell"></i>
-                                        {unreadCount > 0 && <span className="nbadge">{unreadCount}</span>}
-                                    </button>
-                                    {notifOpen && (
-                                        <div className="notif-dropdown">
-                                            <div className="notif-header">
-                                                <span className="notif-title">การแจ้งเตือน</span>
-                                                {unreadCount > 0 && (
-                                                    <button className="notif-markall" onClick={markAllRead}>อ่านทั้งหมด</button>
-                                                )}
-                                            </div>
-                                            <div className="notif-list">
-                                                {notifications.map(n => (
-                                                    <div key={n.id} className={`notif-item ${n.unread ? 'unread' : ''}`} onClick={() => markOneRead(n.id)}>
-                                                        <div className="notif-icon">{n.icon}</div>
-                                                        <div className="notif-body">
-                                                            <div className="notif-item-title">{n.title}</div>
-                                                            <div className="notif-item-desc">{n.desc}</div>
-                                                            <div className="notif-item-time">{n.time}</div>
-                                                        </div>
-                                                        {n.unread && <div className="notif-dot"></div>}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <div className="notif-footer" onClick={() => setNotifOpen(false)}>ดูการแจ้งเตือนทั้งหมด</div>
-                                        </div>
-                                    )}
-                                </div>
-                                <button
-                                    className="nav-icon-btn pos-rel"
-                                    onClick={() => navigate('/favorites')}
-                                >
-                                    <i className="fas fa-heart"></i>
-                                    <span className="nbadge red">1</span>
-                                </button>
-                                <button className="nav-icon-btn pos-rel" onClick={() => navigate('/cart')}>
-                                    <i className="fas fa-shopping-cart"></i>
-                                    {cartCount > 0 && <span className="nbadge red">{cartCount}</span>}
-                                </button>
-                                <div className="profile-wrap" ref={profileRef}>
-                                    <button className="nav-user-btn" onClick={() => setProfileOpen(v => !v)}>
-                                        {profileImage ? (
-                                            <img src={profileImage} alt="Profile" className="nav-avatar" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
-                                        ) : (
-                                            <i className="fas fa-user-circle nav-avatar"></i>
-                                        )}
-                                        <div className="nav-user-info">
-                                            <span className="nav-username">{username}</span>
-                                        </div>
-                                    </button>
-                                    {profileOpen && (
-                                        <div className="profile-dropdown">
-                                            <div className="pd-header">
-                                                {profileImage ? (
-                                                    <img src={profileImage} alt="Profile" className="pd-avatar-icon" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
-                                                ) : (
-                                                    <i className="fas fa-user-circle pd-avatar-icon"></i>
-                                                )}
-                                                <div>
-                                                    <div className="pd-name">{username}</div>
-                                                </div>
-                                            </div>
-                                            {coins !== null && (
-                                                <>
-                                                    <div className="pd-divider"></div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', alignItems: 'center' }}>
-                                                        <div style={{ color: '#555', fontWeight: 'bold' }}>
-                                                            <i className="fas fa-coins" style={{ color: '#f1c40f', marginRight: '8px' }}></i>
-                                                            <span>เหรียญของฉัน</span>
-                                                        </div>
-                                                        <span style={{ color: '#ff4e63', fontWeight: 'bold', fontSize: '16px' }}>
-                                                            {coins.toLocaleString()} 🪙
-                                                        </span>
-                                                    </div>
-                                                </>
-                                            )}
-                                            <div className="pd-divider"></div>
-                                            <div className="pd-item" onClick={() => navigate('/myshelf')}><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
-                                            <div className="pd-item" onClick={() => navigate('/history')}><i className="fas fa-history"></i> ประวัติซื้อ</div>
-                                            <div className="pd-item" onClick={() => navigate('/topup')}><i className="fas fa-coins"></i> ซื้อเหรียญ</div>
-                                            <div className="pd-divider"></div>
-                                            <div className="pd-item" onClick={() => navigate('/settingprofile')}><i className="fas fa-cog"></i> ตั้งค่าบัญชี</div>
-                                            <div className="pd-divider"></div>
-                                            <div className="pd-logout" onClick={handleLogout}>
-                                                <i className="fas fa-sign-out-alt"></i> ออกจากระบบ
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <button className="btn-login" onClick={() => navigate('/')}>เข้าสู่ระบบ</button>
-                                <button className="btn-register" onClick={() => navigate('/')}>สมัครสมาชิก</button>
-                            </>
-                        )}
-                    </div>
-                </div>
-            </header>
-                 
-            {/* ══ HERO */}
+            {/* ══ HERO (เหมือน Topup) ══ */}
             <div className="topup-hero">
                 <div className="topup-page-inner">
                     <div className="topup-breadcrumb">
-                        <span className="topup-breadcrumb-home" onClick={() => navigate('/')}>
-                            <i className="fas fa-house"></i>
-                        </span>
-                        <i className="fas fa-angle-right" style={{ fontSize: 12 }}></i>
+                        <span className="topup-breadcrumb-home" onClick={() => navigate('/')}><i className="fas fa-house" style={{ color: '#999' }}></i></span>
+                        <i className="fas fa-angle-right" style={{ fontSize: 12, color: '#aaa', margin: '0 8px' }}></i>
                         <span className="topup-breadcrumb-cur">รถเข็น</span>
                     </div>
                 </div>
             </div>
 
-            {/* ═════════ 2. MAIN CONTENT ═════════ */}
+            {/* ══ MAIN CONTENT (เดิม ไม่แตะ) ══ */}
             <div className="cart-container">
                 <h2 className="cart-title">ตะกร้าสินค้าของฉัน ({cartItems.length} รายการ)</h2>
-                {/* ... โค้ดเงื่อนไข cartItems.length === 0 และกล่องซ้ายขวาของคุณ ... */}
-                
                 {cartItems.length === 0 ? (
                     <div className="empty-cart">
                         <p style={{ color: '#666', fontSize: '18px', marginBottom: '15px' }}>ไม่มีสินค้าในตะกร้า</p>
@@ -368,7 +205,6 @@ function Cart() {
                     </div>
                 ) : (
                     <div className="cart-grid">
-                        {/* ฝั่งซ้าย: รายการสินค้า */}
                         <div className="cart-items-list">
                             {cartItems.map((item) => (
                                 <div key={item.cart_item_id} className="cart-item">
@@ -384,16 +220,12 @@ function Cart() {
                                 </div>
                             ))}
                         </div>
-
-                        {/* ฝั่งขวา: สรุปยอดชำระ */}
                         <div className="cart-summary">
                             <h3>สรุปยอดชำระ</h3>
                             <div className="summary-row">
                                 <span>ราคาสินค้า</span>
                                 <span>{totalPrice.toLocaleString()} 🪙</span>
                             </div>
-                            
-                            {/* เพิ่มส่วนเช็คเหรียญของผู้ใช้ */}
                             <div className="summary-coins-check" style={{ marginTop: '10px', padding: '10px', background: '#fff8f8', borderRadius: '8px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                                     <span>เหรียญของคุณ:</span>
@@ -404,46 +236,22 @@ function Cart() {
                                         <p style={{ color: '#ff4e63', fontSize: '13px', marginBottom: '10px', fontWeight: 'bold' }}>
                                             <i className="fas fa-exclamation-circle"></i> เหรียญไม่พอ กรุณาเติมเหรียญ
                                         </p>
-                                        <button 
-                                            onClick={() => navigate('/topup')} // 👈 ให้ลิงก์ไปหน้าเติมเงิน
-                                            style={{
-                                                width: '100%',
-                                                padding: '8px 10px',
-                                                background: '#ff9800', 
-                                                color: '#fff',
-                                                border: 'none',
-                                                borderRadius: '6px',
-                                                cursor: 'pointer',
-                                                fontWeight: 'bold',
-                                                fontSize: '14px',
-                                                display: 'flex',
-                                                justifyContent: 'center',
-                                                alignItems: 'center',
-                                                gap: '8px',
-                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                transition: 'all 0.2s'
-                                            }}
+                                        <button onClick={() => navigate('/topup')}
+                                            style={{ width: '100%', padding: '8px 10px', background: '#ff9800', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', transition: 'all 0.2s' }}
                                             onMouseOver={(e) => e.target.style.background = '#e68a00'}
-                                            onMouseOut={(e) => e.target.style.background = '#ff9800'}
-                                        >
+                                            onMouseOut={(e) => e.target.style.background = '#ff9800'}>
                                             <i className="fas fa-coins"></i> ไปหน้าเติมเหรียญ
                                         </button>
                                     </div>
                                 )}
                             </div>
-
                             <hr className="divider" />
                             <div className="summary-total">
                                 <span>ยอดสุทธิ</span>
                                 <span>{totalPrice.toLocaleString()} 🪙</span>
                             </div>
-
-                            <button 
-                                className="btn-checkout" 
-                                onClick={handleCheckout}
-                                disabled={coins < totalPrice} 
-                                style={{ opacity: coins < totalPrice ? 0.6 : 1 }}
-                            >
+                            <button className="btn-checkout" onClick={handleCheckout}
+                                disabled={coins < totalPrice} style={{ opacity: coins < totalPrice ? 0.6 : 1 }}>
                                 ชำระเงินด้วยเหรียญ
                             </button>
                         </div>
@@ -453,4 +261,5 @@ function Cart() {
         </div>
     );
 }
+
 export default Cart;

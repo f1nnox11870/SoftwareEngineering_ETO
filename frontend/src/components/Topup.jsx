@@ -5,15 +5,11 @@ import Login from './login';
 import Register from './Register';
 import '../assets/topup.css';
 import Transaction from './Transaction';
-const MENU_ITEMS = [
-    { label: 'นิยาย',        subs: ['นิยายรักโรแมนติก','นิยายวาย','นิยายแฟนตาซี','นิยายสืบสวน','นิยายกำลังภายใน','ไลท์โนเวล','วรรณกรรมทั่วไป','นิยายยูริ','กวีนิพนธ์','แฟนเฟิค'] },
-    { label: 'การ์ตูน',      subs: [] },
-    { label: 'อีบุ๊กทั่วไป', subs: [] },
-    { label: 'นิตยสาร',      subs: [] },
-    { label: 'หนังสือพิมพ์', subs: [] },
-    { label: 'อีบุ๊กจัดชุด', subs: [] },
+import Navbar from './navbar';
+const MAIN_CATEGORIES = [
+    { label: 'นิยาย',           key: 'novel', tab: 'นิยาย'          },
+    { label: 'การ์ตูน(มังงะ)', key: 'manga', tab: 'การ์ตูน/มังงะ'  },
 ];
-const ROMANCE_SUBS = ['นิยายรักวัยรุ่น','นิยายรักแฟนตาซี','นิยายรักจีนโบราณ','นิยายรักจีนปัจจุบัน','นิยายรักกำลังภายใน','นิยายรักผู้ใหญ่'];
 
 const PROMO_PACKAGES = [
     { id: 'p1', coins: 100, bonus: 50, total: 150, price: '49.00', badge: 'ลด 30%', badgeType: 'sale', icon: 'coins' },
@@ -33,6 +29,7 @@ const EXTRA_PACKAGES = [
     { id: 'e3', coins: 2000, bonus: 500, total: 2500, price: '1399.00', badge: 'VIP',      badgeType: 'best', icon: 'star' },
 ];
 
+//  Notification helpers 
 function formatTime(dateStr) {
     if (!dateStr) return '';
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -47,10 +44,28 @@ function formatTime(dateStr) {
     return new Date(dateStr).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
 }
 
-function buildNotifications(historyData, topupData) {
+function buildNotifications(historyData, topupData, newChapterData = [], readIds = new Set()) {
     const notifs = [];
+
+    // ── แจ้งเตือนตอนใหม่ (หนังสือที่ซื้อหรือกดใจ) ──────────────────────────
+    newChapterData.forEach(c => {
+        const nid   = `newchap-${c.chapter_id}`;
+        const title = `มีตอนใหม่: ${c.book_title}`;
+        const desc  = `ตอนที่ ${c.chapter_number}${c.chapter_title ? ` — ${c.chapter_title}` : ''} เพิ่งเผยแพร่แล้ว`;
+        notifs.push({
+            id: nid,
+            title,
+            desc,
+            time: formatTime(c.published_at),
+            unread: !readIds.has(nid),
+            tag: 'new_chapter',
+            book_id: c.book_id,
+        });
+    });
+
+    // ── เติมเหรียญ ────────────────────────────────────────────────────────────
     topupData.forEach(t => {
-        const icon  = t.status === 'approved' ? '🪙' : t.status === 'rejected' ? '❌' : '⏳';
+        const nid   = `topup-${t.id}`;
         const title = t.status === 'approved'
             ? `เติมเหรียญสำเร็จ +${Number(t.total_coins).toLocaleString()} เหรียญ`
             : t.status === 'rejected' ? 'คำขอเติมเหรียญถูกปฏิเสธ'
@@ -59,16 +74,31 @@ function buildNotifications(historyData, topupData) {
             ? `ชำระ ฿${t.amount} — รับ ${Number(t.total_coins).toLocaleString()} เหรียญแล้ว`
             : t.status === 'rejected' ? (t.note || 'กรุณาติดต่อฝ่ายสนับสนุน')
             : `แพ็กเกจ ฿${t.amount} — รอแอดมินตรวจสอบ`;
-        notifs.push({ id: `topup-${t.id}`, icon, title, desc, time: formatTime(t.created_at), unread: t.status === 'approved' });
+        notifs.push({ id: nid, title, desc, time: formatTime(t.created_at), unread: !readIds.has(nid) && t.status === 'approved' });
     });
+
+    // ── ประวัติซื้อ ───────────────────────────────────────────────────────────
     historyData.slice(0, 8).forEach(h => {
-        const icon  = h.type === 'book' ? '📚' : h.type === 'topup' ? '🪙' : '📄';
+        const nid   = `hist-${h.id}`;
         const title = h.type === 'book' ? 'ซื้อหนังสือสำเร็จ' : h.type === 'topup' ? 'เติมเหรียญสำเร็จ' : 'ปลดล็อกตอนสำเร็จ';
-        notifs.push({ id: `hist-${h.id}`, icon, title, desc: h.title, time: formatTime(h.purchased_at), unread: false });
+        notifs.push({ id: nid, title, desc: h.title, time: formatTime(h.purchased_at), unread: false });
     });
+
     return notifs.slice(0, 20);
 }
 
+function loadReadIds() {
+    try { return new Set(JSON.parse(localStorage.getItem('notif_read_ids') || '[]')); }
+    catch { return new Set(); }
+}
+function saveReadId(id) {
+    try {
+        const s = loadReadIds();
+        s.add(id);
+        const arr = [...s].slice(-200);
+        localStorage.setItem('notif_read_ids', JSON.stringify(arr));
+    } catch {}
+}
 function PackageCard({ pkg, onSelect }) {
     const iconMap = {
         coins:       <i className="fa-solid fa-coins"       style={{ color: '#f0a500' }}></i>,
@@ -91,6 +121,7 @@ function PackageCard({ pkg, onSelect }) {
     );
 }
 
+
 function Topup() {
     const navigate = useNavigate();
 
@@ -101,9 +132,12 @@ function Topup() {
     const [modal, setModal]               = useState(null);
     const [balance, setBalance]           = useState(null);
     const [coins, setCoins]               = useState(null);
+    const [navSearch, setNavSearch] = useState('');
     const [cartCount, setCartCount]       = useState(0);
+    const [favoriteIds, setFavoriteIds] = useState([]);
     const [megaOpen, setMegaOpen]         = useState(false);
     const [hoveredMenu, setHoveredMenu]   = useState(null);
+    const [dbCategories, setDbCategories] = useState({ novel: [], manga: [] });
     const [profileOpen, setProfileOpen]   = useState(false);
     const [notifOpen, setNotifOpen]       = useState(false);
     const [notifications, setNotifications] = useState([]);
@@ -129,21 +163,52 @@ function Topup() {
     const [submitError, setSubmitError]   = useState('');
     const slipInputRef = useRef(null);
 
+
     useEffect(() => {
         const token = localStorage.getItem('token');
         const user  = localStorage.getItem('username');
         if (token) { setIsLoggedIn(true); if (user) setUsername(user); setRole(localStorage.getItem('role')); }
     }, []);
 
-    const refreshNotifications = async (token) => {
+    // ดึง subcategories จาก DB
+    useEffect(() => {
+        axios.get('http://localhost:3001/books/categories')
+            .then(res => setDbCategories(res.data))
+            .catch(() => {});
+    }, []);
+
+     const refreshNotifications = async (token) => {
         const headers = { Authorization: `Bearer ${token}` };
-        const [topupRes, histRes] = await Promise.all([
+        const readIds = loadReadIds();
+        const [topupRes, histRes, newChapRes] = await Promise.all([
             axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
             axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
+            axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
         ]);
-        setNotifications(buildNotifications(histRes.data, topupRes.data));
+        setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds));
     };
 
+    const handleNavSearch = () => {
+        if (navSearch.trim()) {
+            navigate(`/?search=${encodeURIComponent(navSearch)}`);
+        }
+    };
+    
+    const fetchFavoriteIds = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        try {
+            const res = await axios.get('http://localhost:3001/favorites', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const ids = res.data.map(item => item.book_id);
+            setFavoriteIds(ids);
+        } catch (error) {
+            console.error("Error fetching favorites:", error);
+        }
+    };
+    
     useEffect(() => {
         const fetchProfile = async () => {
             const token = localStorage.getItem('token');
@@ -159,6 +224,7 @@ function Topup() {
             const token = localStorage.getItem('token');
             fetchProfile();
             refreshNotifications(token);
+            fetchFavoriteIds();
             axios.get('http://localhost:3001/cart', { headers: { Authorization: `Bearer ${token}` } })
                 .then(res => setCartCount(res.data.length)).catch(() => {});
             coinInterval.current = setInterval(fetchProfile, 30000);
@@ -180,8 +246,41 @@ function Topup() {
     }, []);
 
     const unreadCount = notifications.filter(n => n.unread).length;
-    const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
-    const markOneRead = (id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
+    const markAllRead = () => {
+        setNotifications(prev => prev.map(n => {
+            if (n.unread) saveReadId(n.id);
+            return { ...n, unread: false };
+        }));
+        const token = localStorage.getItem('token');
+        const newChapIds = notifications
+            .filter(n => n.tag === 'new_chapter' && n.unread)
+            .map(n => Number(n.id.replace('newchap-', '')));
+        if (token && newChapIds.length > 0) {
+            axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                { episodeIds: newChapIds },
+                { headers: { Authorization: `Bearer ${token}` } }
+            ).catch(() => {});
+        }
+    };
+    const markOneRead = (id) => {
+        saveReadId(id);
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
+        const notif = notifications.find(n => n.id === id);
+        if (notif && notif.tag === 'new_chapter') {
+            const token = localStorage.getItem('token');
+            const episodeId = Number(id.replace('newchap-', ''));
+            if (token && episodeId) {
+                axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                    { episodeIds: [episodeId] },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                ).catch(() => {});
+            }
+            if (notif.book_id) {
+                setNotifOpen(false);
+                navigate(`/read/${notif.book_id}`);
+            }
+        }
+    };
 
     useEffect(() => {
         if (qrPkg) {
@@ -274,153 +373,13 @@ function Topup() {
 };
     return (
         <div className="home-page">
-            {/* ══ NAVBAR ══ */}
-            <header className="navbar">
-                <div className="navbar-inner">
-                    <div className="nav-left">
-                        <div className="nav-logo">
-                            <div className="nav-logo-box" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
-                                <i className="fas fa-book-open"></i>
-                            </div>
-                        </div>
-                        <div className="mega-wrap" ref={megaRef}>
-                            <button className="nav-hamburger" onClick={() => setMegaOpen(v => !v)}>
-                                <i className="fas fa-bars"></i><span>เลือกหมวด</span>
-                            </button>
-                            {megaOpen && (
-                                <div className="mega-menu">
-                                    <div className="mega-menu-inner">
-                                        <div className="mega-col">
-                                            {MENU_ITEMS.map(item => (
-                                                <div key={item.label}
-                                                    className={`mega-item ${hoveredMenu === item.label ? 'hovered' : ''}`}
-                                                    onMouseEnter={() => setHoveredMenu(item.label)}>
-                                                    <span>{item.label}</span>
-                                                    {item.subs.length > 0 && <i className="fas fa-chevron-right"></i>}
-                                                </div>
-                                            ))}
-                                        </div>
-                                        {hoveredMenu === 'นิยาย' && (
-                                            <div className="mega-col">
-                                                <div className="mega-item hovered"><span>นิยายรักโรแมนติก</span><i className="fas fa-chevron-right"></i></div>
-                                                {MENU_ITEMS[0].subs.slice(1).map(s => <div key={s} className="mega-item"><span>{s}</span></div>)}
-                                            </div>
-                                        )}
-                                        {hoveredMenu === 'นิยาย' && (
-                                            <div className="mega-col">
-                                                {ROMANCE_SUBS.map(s => <div key={s} className="mega-item"><span>{s}</span></div>)}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="nav-center">
-                        <div className="nav-search">
-                            <input type="text" placeholder="วันนี้อ่านอะไรดี?" />
-                            <button><i className="fas fa-search"></i></button>
-                        </div>
-                    </div>
-
-                    <div className="nav-right">
-                        {isLoggedIn ? (
-                            <>
-                                {role === 'admin' && (
-                                    <button className="btn-admin" onClick={() => navigate('/admin')}>จัดการเนื้อหา</button>
-                                )}
-                                <div className="notif-wrap" ref={notifRef}>
-                                    <button className="nav-icon-btn pos-rel" onClick={() => { setNotifOpen(v => !v); setProfileOpen(false); }}>
-                                        <i className="fas fa-bell"></i>
-                                        {unreadCount > 0 && <span className="nbadge">{unreadCount}</span>}
-                                    </button>
-                                    {notifOpen && (
-                                        <div className="notif-dropdown">
-                                            <div className="notif-header">
-                                                <span className="notif-title">การแจ้งเตือน</span>
-                                                {unreadCount > 0 && <button className="notif-markall" onClick={markAllRead}>อ่านทั้งหมด</button>}
-                                            </div>
-                                            <div className="notif-list">
-                                                {notifications.length === 0 ? (
-                                                    <div style={{ padding: '24px', textAlign: 'center', color: '#aaa', fontSize: 13 }}>ยังไม่มีการแจ้งเตือน</div>
-                                                ) : notifications.map(n => (
-                                                    <div key={n.id} className={`notif-item ${n.unread ? 'unread' : ''}`} onClick={() => markOneRead(n.id)}>
-                                                        <div className="notif-icon-wrap">{n.icon}</div>
-                                                        <div className="notif-body">
-                                                            <div className="notif-item-title">{n.title}</div>
-                                                            <div className="notif-item-desc">{n.desc}</div>
-                                                            <div className="notif-item-time">{n.time}</div>
-                                                        </div>
-                                                        {n.unread && <div className="notif-dot"></div>}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <div className="notif-footer" onClick={() => setNotifOpen(false)}>ดูการแจ้งเตือนทั้งหมด</div>
-                                        </div>
-                                    )}
-                                </div>
-                                <button className="nav-icon-btn pos-rel" onClick={() => navigate('/favorites')}>
-                                    <i className="fas fa-heart"></i>
-                                </button>
-                                <button className="nav-icon-btn pos-rel" onClick={() => navigate('/cart')}>
-                                    <i className="fas fa-shopping-cart"></i>
-                                    {cartCount > 0 && <span className="nbadge red">{cartCount}</span>}
-                                </button>
-                                <div className="profile-wrap" ref={profileRef}>
-                                    <button className="nav-user-btn" onClick={() => setProfileOpen(v => !v)}>
-                                        {profileImage
-                                            ? <img src={profileImage} alt="avatar" className="nav-avatar" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-                                            : <i className="fas fa-user-circle nav-avatar"></i>
-                                        }
-                                        <div className="nav-user-info"><span className="nav-username">{username}</span></div>
-                                    </button>
-                                    {profileOpen && (
-                                        <div className="profile-dropdown">
-                                            <div className="pd-header">
-                                                {profileImage
-                                                    ? <img src={profileImage} alt="avatar" className="pd-avatar-icon" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
-                                                    : <i className="fas fa-user-circle pd-avatar-icon"></i>
-                                                }
-                                                <div><div className="pd-name">{username}</div></div>
-                                            </div>
-                                            <div className="pd-divider"></div>
-                                            {coins !== null && (
-                                                <>
-                                                    <div className="pd-coins-row">
-                                                        <div className="pd-coins-label"><i className="fas fa-coins pd-coins-icon"></i><span>เหรียญของฉัน</span></div>
-                                                        <span className="pd-coins-value">{coins.toLocaleString()}</span>
-                                                    </div>
-                                                    <div className="pd-divider"></div>
-                                                </>
-                                            )}
-                                            <div className="pd-group-title">การใช้งาน</div>
-                                            <div className="pd-item" onClick={() => navigate('/myshelf')}><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
-                                            <div className="pd-item" onClick={() => navigate('/history')}><i className="fas fa-history"></i> ประวัติซื้อ</div>
-                                            <div className="pd-item" onClick={() => navigate('/topup')}><i className="fas fa-coins"></i> ซื้อเหรียญ</div>
-                                            <div className="pd-divider"></div>
-                                            <div className="pd-item" onClick={() => navigate('/settingprofile')}><i className="fas fa-cog"></i> ตั้งค่าบัญชี</div>
-                                            <div className="pd-divider"></div>
-                                            <div className="pd-logout" onClick={handleLogout}><i className="fas fa-sign-out-alt"></i> ออกจากระบบ</div>
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <button className="btn-login"    onClick={() => setModal('login')}>เข้าสู่ระบบ</button>
-                                <button className="btn-register" onClick={() => setModal('register')}>สมัครสมาชิก</button>
-                            </>
-                        )}
-                    </div>
-                </div>
-            </header>
+            <Navbar/>
 
             {/* ══ HERO ══ */}
             <div className="topup-hero">
                 <div className="topup-page-inner">
                     <div className="topup-breadcrumb">
-                        <span className="topup-breadcrumb-home" onClick={() => navigate('/')}><i className="fas fa-house"></i></span>
+                        <span className="topup-breadcrumb-home" onClick={() => navigate('/')}><i className="fas fa-house" style={{ color: '#999' }}></i></span>
                         <i className="fas fa-angle-right" style={{ fontSize: 12, color: '#aaa' }}></i>
                         <span className="topup-breadcrumb-cur">ร้านขายเหรียญ</span>
                     </div>
@@ -469,16 +428,7 @@ function Topup() {
                             )}
                         </div>
                         <div className="topup-sidebar">
-                            <div className="topup-promo-box">
-                                <div className="topup-section-title" style={{ marginBottom: 4, fontSize: 15 }}>
-                                    <i className="fas fa-tag" style={{ color: '#b5651d' }}></i> โค้ดส่วนลด
-                                </div>
-                                <div style={{ fontSize: 12, color: '#aaa', marginBottom: 10 }}>กรอกโค้ดเพื่อรับส่วนลดพิเศษ</div>
-                                <div className="topup-promo-row">
-                                    <input type="text" placeholder="เช่น COIN20" value={promoCode} onChange={e => setPromoCode(e.target.value)} />
-                                    <button onClick={() => alert('ตรวจสอบโค้ดแล้ว!')}>ใช้</button>
-                                </div>
-                            </div>
+
                             <div className="topup-notice-box">
                                 <div className="topup-notice-title">
                                     <i className="fas fa-circle-info" style={{ color: '#b5651d' }}></i> หมายเหตุ
@@ -564,15 +514,7 @@ function Topup() {
                             }}>
                             {isSubmitting ? <><i className="fas fa-spinner fa-spin" style={{ marginRight: 6 }}></i>กำลังส่ง…</> : <><i className="fas fa-paper-plane" style={{ marginRight: 6 }}></i>ส่งสลิปยืนยันการชำระ</>}
                         </button>
-                        <div style={{ 
-                            marginTop: '10px', 
-                            borderTop: '2px dashed #eee', 
-                            paddingTop: '20px',
-                            textAlign: 'left' // บังคับให้ข้อความชิดซ้ายตามดีไซน์ Transaction
-                        }}>
-                            <Transaction key={isSubmitting} /> 
-                            {/* เทคนิค: การใส่ key={isSubmitting} จะทำให้รายการอัปเดตทันทีเมื่อส่งสลิปสำเร็จ */}
-                        </div>
+                       
                     </div>
                 </div>
             )}

@@ -1,124 +1,362 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import Login from './login';
+import Register from './Register';
+import '../assets/transaction.css';
+import Navbar from './navbar';
+
+const MAIN_CATEGORIES = [
+    { label: 'นิยาย',           key: 'novel', tab: 'นิยาย'          },
+    { label: 'การ์ตูน(มังงะ)', key: 'manga', tab: 'การ์ตูน/มังงะ'  },
+];
+
+//  Notification helpers 
+function formatTime(dateStr) {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const min = Math.floor(diff / 60000);
+    if (min < 1)   return 'เมื่อกี้';
+    if (min < 60)  return `${min} นาทีที่แล้ว`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24)   return `${hr} ชั่วโมงที่แล้ว`;
+    const day = Math.floor(hr / 24);
+    if (day === 1) return 'เมื่อวาน';
+    if (day < 7)   return `${day} วันที่แล้ว`;
+    return new Date(dateStr).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+}
+
+function buildNotifications(historyData, topupData, newChapterData = [], readIds = new Set()) {
+    const notifs = [];
+
+    // ── แจ้งเตือนตอนใหม่ (หนังสือที่ซื้อหรือกดใจ) ──────────────────────────
+    newChapterData.forEach(c => {
+        const nid   = `newchap-${c.chapter_id}`;
+        const title = `มีตอนใหม่: ${c.book_title}`;
+        const desc  = `ตอนที่ ${c.chapter_number}${c.chapter_title ? ` — ${c.chapter_title}` : ''} เพิ่งเผยแพร่แล้ว`;
+        notifs.push({
+            id: nid,
+            title,
+            desc,
+            time: formatTime(c.published_at),
+            unread: !readIds.has(nid),
+            tag: 'new_chapter',
+            book_id: c.book_id,
+        });
+    });
+
+    // ── เติมเหรียญ ────────────────────────────────────────────────────────────
+    topupData.forEach(t => {
+        const nid   = `topup-${t.id}`;
+        const title = t.status === 'approved'
+            ? `เติมเหรียญสำเร็จ +${Number(t.total_coins).toLocaleString()} เหรียญ`
+            : t.status === 'rejected' ? 'คำขอเติมเหรียญถูกปฏิเสธ'
+            : 'คำขอเติมเหรียญรอการตรวจสอบ';
+        const desc = t.status === 'approved'
+            ? `ชำระ ฿${t.amount} — รับ ${Number(t.total_coins).toLocaleString()} เหรียญแล้ว`
+            : t.status === 'rejected' ? (t.note || 'กรุณาติดต่อฝ่ายสนับสนุน')
+            : `แพ็กเกจ ฿${t.amount} — รอแอดมินตรวจสอบ`;
+        notifs.push({ id: nid, title, desc, time: formatTime(t.created_at), unread: !readIds.has(nid) && t.status === 'approved' });
+    });
+
+    // ── ประวัติซื้อ ───────────────────────────────────────────────────────────
+    historyData.slice(0, 8).forEach(h => {
+        const nid   = `hist-${h.id}`;
+        const title = h.type === 'book' ? 'ซื้อหนังสือสำเร็จ' : h.type === 'topup' ? 'เติมเหรียญสำเร็จ' : 'ปลดล็อกตอนสำเร็จ';
+        notifs.push({ id: nid, title, desc: h.title, time: formatTime(h.purchased_at), unread: false });
+    });
+
+    return notifs.slice(0, 20);
+}
+
+function loadReadIds() {
+    try { return new Set(JSON.parse(localStorage.getItem('notif_read_ids') || '[]')); }
+    catch { return new Set(); }
+}
+function saveReadId(id) {
+    try {
+        const s = loadReadIds();
+        s.add(id);
+        const arr = [...s].slice(-200);
+        localStorage.setItem('notif_read_ids', JSON.stringify(arr));
+    } catch {}
+}
+
 
 const Transaction = () => {
+    const navigate = useNavigate();
+
+    // ── Navbar state ──
+    const [isLoggedIn, setIsLoggedIn]       = useState(false);
+    const [username, setUsername]           = useState('');
+    const [profileImage, setProfileImage]   = useState(null);
+    const [role, setRole]                   = useState(null);
+    const [modal, setModal]                 = useState(null);
+    const [coins, setCoins]                 = useState(null);
+    const [cartCount, setCartCount]         = useState(0);
+    const [favoriteIds, setFavoriteIds]   = useState([]);
+    const [megaOpen, setMegaOpen]           = useState(false);
+    const [hoveredMenu, setHoveredMenu]     = useState(null);
+    const [dbCategories, setDbCategories]   = useState({ novel: [], manga: [] });
+    const [profileOpen, setProfileOpen]     = useState(false);
+    const [notifOpen, setNotifOpen]         = useState(false);
+    const [notifications, setNotifications] = useState([]);
+    const megaRef      = useRef(null);
+    const profileRef   = useRef(null);
+    const notifRef     = useRef(null);
+    const coinInterval = useRef(null);
+
+    // ── Page state ──
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
 
+    // ── Init ──
     useEffect(() => {
-        fetchHistory();
+        const token = localStorage.getItem('token');
+        const user  = localStorage.getItem('username');
+        if (token) {
+            setIsLoggedIn(true);
+            if (user) setUsername(user);
+            setRole(localStorage.getItem('role'));
+        }
     }, []);
 
-    const fetchHistory = async () => {
-    try {
+    const fetchFavoriteIds = async () => {
         const token = localStorage.getItem('token');
-        if (!token) {
-            console.error("No token found");
-            return;
-        }
-
-        const res = await axios.get('http://localhost:3001/topup-history', {
-            headers: { Authorization: `Bearer ${token}` } // ตรวจสอบว่ามีช่องว่างหลัง Bearer
-        });
-        setHistory(res.data);
-        setLoading(false);
-    } catch (err) {
-        console.error("Fetch error details:", err.response || err); // ดูรายละเอียด Error
-        setLoading(false);
-    }
-};
-
-    // ฟังก์ชันช่วยจัดการสีตามสถานะ
-    const getStatusStyle = (status) => {
-        switch (status) {
-            case 'pending': return { color: '#f39c12', bg: '#fff9e6', text: '⏳ รอดำเนินการ' };
-            case 'approved': return { color: '#2ecc71', bg: '#eafff2', text: '✅ สำเร็จ' };
-            case 'rejected': return { color: '#e74c3c', bg: '#ffebee', text: '❌ ปฏิเสธ' };
-            default: return { color: '#888', bg: '#f5f5f5', text: 'ไม่ทราบสถานะ' };
+        if (!token) return;
+        
+        try {
+            const res = await axios.get('http://localhost:3001/favorites', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            // แปลงข้อมูลให้กลายเป็น Array ของ ID ก่อนนำไปใช้
+            const ids = res.data.map(item => item.book_id);
+            setFavoriteIds(ids);
+        } catch (error) {
+            console.error("Error fetching favorites:", error);
         }
     };
 
+    useEffect(() => {
+        const fetchProfile = async () => {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            try {
+                const res = await axios.get('http://localhost:3001/profile', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setCoins(res.data.coins ?? 0);
+                setProfileImage(res.data.image || null);
+            } catch { setCoins(0); }
+        };
+        if (isLoggedIn) {
+            const token = localStorage.getItem('token');
+            fetchProfile();
+            refreshNotifications(token);
+            fetchFavoriteIds();
+            axios.get('http://localhost:3001/cart', { headers: { Authorization: `Bearer ${token}` } })
+                .then(res => setCartCount(res.data.length)).catch(() => {});
+            coinInterval.current = setInterval(fetchProfile, 30000);
+        } else {
+            setCoins(null);
+            clearInterval(coinInterval.current);
+        }
+        return () => clearInterval(coinInterval.current);
+    }, [isLoggedIn]);
+
+    useEffect(() => {
+        const h = (e) => {
+            if (megaRef.current    && !megaRef.current.contains(e.target))    setMegaOpen(false);
+            if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false);
+            if (notifRef.current   && !notifRef.current.contains(e.target))   setNotifOpen(false);
+        };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+    }, []);
+
+    const unreadCount = notifications.filter(n => n.unread).length;
+    const markAllRead = () => {
+        setNotifications(prev => prev.map(n => {
+            if (n.unread) saveReadId(n.id);
+            return { ...n, unread: false };
+        }));
+        const token = localStorage.getItem('token');
+        const newChapIds = notifications
+            .filter(n => n.tag === 'new_chapter' && n.unread)
+            .map(n => Number(n.id.replace('newchap-', '')));
+        if (token && newChapIds.length > 0) {
+            axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                { episodeIds: newChapIds },
+                { headers: { Authorization: `Bearer ${token}` } }
+            ).catch(() => {});
+        }
+    };
+    const markOneRead = (id) => {
+        saveReadId(id);
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
+        const notif = notifications.find(n => n.id === id);
+        if (notif && notif.tag === 'new_chapter') {
+            const token = localStorage.getItem('token');
+            const episodeId = Number(id.replace('newchap-', ''));
+            if (token && episodeId) {
+                axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                    { episodeIds: [episodeId] },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                ).catch(() => {});
+            }
+            if (notif.book_id) {
+                setNotifOpen(false);
+                navigate(`/read/${notif.book_id}`);
+            }
+        }
+    };
+    const refreshNotifications = async (token) => {
+        const headers = { Authorization: `Bearer ${token}` };
+        const readIds = loadReadIds();
+        const [topupRes, histRes, newChapRes] = await Promise.all([
+            axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+            axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
+            axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+        ]);
+        setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds));
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('username');
+        setIsLoggedIn(false); setUsername(''); setProfileOpen(false); setCoins(null);
+    };
+    const handleLoginSuccess = (name) => { setIsLoggedIn(true); setUsername(name); setModal(null); };
+    const handleOverlayClick = (e) => { if (e.target.classList.contains('modal-overlay')) setModal(null); };
+
+    // ── Page logic ──
+    const fetchHistory = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            const res = await axios.get('http://localhost:3001/topup-history', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setHistory(res.data);
+        } catch (err) {
+            console.error('Fetch error:', err.response || err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => { fetchHistory(); }, []);
+
+    // ดึง subcategories จาก DB
+    useEffect(() => {
+        axios.get('http://localhost:3001/books/categories')
+            .then(res => setDbCategories(res.data))
+            .catch(() => {});
+    }, []);
+
+    const statusMap = {
+        pending:  { label: 'รอดำเนินการ', icon: 'fa-clock',        color: '#f39c12', bg: 'rgba(243,156,18,0.08)'  },
+        approved: { label: 'สำเร็จ',       icon: 'fa-circle-check', color: '#2ecc71', bg: 'rgba(46,204,113,0.08)'  },
+        rejected: { label: 'ปฏิเสธ',       icon: 'fa-circle-xmark', color: '#e74c3c', bg: 'rgba(231,76,60,0.08)'   },
+    };
+
+    const fmtDate = (str) =>
+        new Date(str).toLocaleString('th-TH', {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        }) + ' น.';
+
     return (
-        <div style={{ padding: '10px 0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                <h3 style={{ margin: 0, fontSize: '18px', color: '#333' }}>รายการล่าสุด</h3>
-                <button onClick={fetchHistory} style={{ background: 'none', border: 'none', color: '#ff4e63', cursor: 'pointer', fontSize: '13px' }}>
-                    <i className="fas fa-sync-alt"></i> รีเฟรช
-                </button>
+        <div className="home-page">
+            <Navbar/>
+
+            {/* ══ HERO HEADER ══ */}
+            <div className="topup-hero">
+                <div className="topup-page-inner">
+                    <div className="topup-breadcrumb">
+                        <span className="topup-breadcrumb-home" onClick={() => navigate('/')}><i className="fas fa-house" style={{ color: '#999' }}></i></span>
+                        <i className="fas fa-angle-right" style={{ fontSize: 12, color: '#aaa' }}></i>
+                        <span className="topup-breadcrumb-cur">รายการเติมเงิน</span>
+                    </div>
+                </div>
             </div>
 
-            {loading ? (
-                <p style={{ textAlign: 'center', color: '#888' }}>กำลังโหลดข้อมูล...</p>
-            ) : history.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '30px', background: '#f9f9f9', borderRadius: '12px', color: '#999' }}>
-                    <i className="fas fa-file-invoice-dollar" style={{ fontSize: '30px', marginBottom: '10px' }}></i>
-                    <p style={{ margin: 0, fontSize: '14px' }}>ยังไม่มีประวัติการเติมเงิน</p>
-                </div>
-            ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {history.map((item) => {
-                        const status = getStatusStyle(item.status);
-                        return (
-                            <div key={item.id} style={{
-                                padding: '15px',
-                                borderRadius: '12px',
-                                background: '#fff',
-                                border: '1px solid #eee',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                transition: '0.2s',
-                                cursor: 'default'
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                                    {/* Icon วงกลมด้านซ้าย */}
-                                    <div style={{ 
-                                        width: '45px', height: '45px', borderRadius: '50%', 
-                                        background: status.bg, display: 'flex', 
-                                        alignItems: 'center', justifyContent: 'center',
-                                        fontSize: '20px'
-                                    }}>
-                                        🪙
-                                    </div>
-                                    
-                                    <div>
-                                        <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#333' }}>
-                                            เติม {item.coins} เหรียญ
-                                        </div>
-                                        <div style={{ fontSize: '12px', color: '#999', marginTop: '3px' }}>
-                                            {new Date(item.created_at).toLocaleString('th-TH', { 
-                                                day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
-                                            })} น.
-                                        </div>
-                                    </div>
-                                </div>
+            {/* ══ MAIN CONTENT ══ */}
+            <div className="txn-main">
+                <div className="txn-inner">
 
-                                <div style={{ textAlign: 'right' }}>
-                                    <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#222' }}>
-                                        ฿{item.amount.toLocaleString()}
+                    {/* toolbar */}
+                    <div className="txn-toolbar">
+                        <span className="txn-toolbar-label">
+                            {!loading && `${history.length} รายการ`}
+                        </span>
+                        <button className="txn-refresh-btn" onClick={fetchHistory}>
+                            <i className="fas fa-rotate-right"></i> รีเฟรช
+                        </button>
+                    </div>
+
+                    {/* list */}
+                    {loading ? (
+                        <div className="txn-empty">
+                            <i className="fas fa-spinner fa-spin txn-empty-icon"></i>
+                            <p>กำลังโหลดข้อมูล…</p>
+                        </div>
+                    ) : history.length === 0 ? (
+                        <div className="txn-empty">
+                            <i className="fas fa-file-invoice-dollar txn-empty-icon"></i>
+                            <p>ยังไม่มีประวัติการเติมเงิน</p>
+                            <button className="txn-goto-btn" onClick={() => navigate('/topup')}>
+                                <i className="fas fa-coins"></i> เติมเหรียญเลย
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="txn-list">
+                            {history.map((item) => {
+                                const s = statusMap[item.status] || statusMap.pending;
+                                return (
+                                    <div key={item.id} className="txn-row">
+                                        <div className="txn-row-left">
+                                            <div className="txn-coin-dot" style={{ background: s.bg }}>
+                                                <i className="fa-solid fa-coins" style={{ color: '#f0a500' }}></i>
+                                            </div>
+                                            <div>
+                                                <div className="txn-row-title">
+                                                    เติม <strong>{Number(item.coins).toLocaleString()}</strong> เหรียญ
+                                                    {item.bonus > 0 && (
+                                                        <span className="txn-bonus-tag">+{item.bonus} โบนัส</span>
+                                                    )}
+                                                </div>
+                                                <div className="txn-row-date">{fmtDate(item.created_at)}</div>
+                                            </div>
+                                        </div>
+                                        <div className="txn-row-right">
+                                            <div className="txn-row-amount">฿{Number(item.amount).toLocaleString()}</div>
+                                            <div className="txn-badge" style={{ color: s.color, background: s.bg }}>
+                                                <i className={`fas ${s.icon}`}></i> {s.label}
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div style={{ 
-                                        fontSize: '11px', 
-                                        marginTop: '5px',
-                                        fontWeight: '600',
-                                        color: status.color,
-                                        padding: '2px 8px',
-                                        borderRadius: '20px',
-                                        background: status.bg,
-                                        display: 'inline-block'
-                                    }}>
-                                        {status.text}
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {!loading && history.length > 0 && (
+                        <p className="txn-note">
+                            <i className="fas fa-circle-info"></i>
+                            รายการจะถูกตรวจสอบโดยแอดมินภายใน 5–15 นาที
+                        </p>
+                    )}
+                </div>
+            </div>
+
+            {/* ══ LOGIN/REGISTER MODAL ══ */}
+            {modal && (
+                <div className="modal-overlay" onClick={handleOverlayClick}>
+                    {modal === 'login'    && <Login    onClose={() => setModal(null)} onSwitch={() => setModal('register')} onLoginSuccess={handleLoginSuccess} />}
+                    {modal === 'register' && <Register onClose={() => setModal(null)} onSwitch={() => setModal('login')} />}
                 </div>
             )}
-            
-            <p style={{ textAlign: 'center', fontSize: '11px', color: '#bbb', marginTop: '15px' }}>
-                *รายการจะถูกตรวจสอบโดยแอดมินภายใน 5-15 นาที
-            </p>
         </div>
     );
 };

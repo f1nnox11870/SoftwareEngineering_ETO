@@ -7,7 +7,7 @@
 .shelf-hero {
     background: #fff;
     padding: 20px 0;
-    border-bottom: 1px solid #eee;
+    border-bottom: none;
     margin-bottom: 20px;
 }
 
@@ -61,7 +61,7 @@
     font-size: 24px;
     font-weight: 700;
     color: #222;
-    border-bottom: 3px solid #ff4e63;
+    border-bottom: none;
     display: inline-block;
     padding-bottom: 5px;
     margin: 0;
@@ -99,8 +99,8 @@
 }
 
 .shelf-search:focus {
-    border-color: #ff4e63;
-    box-shadow: 0 0 0 3px rgba(255, 78, 99, 0.08);
+    
+    border-color:'none';
 }
 
 .shelf-filter-select {
@@ -116,7 +116,7 @@
 }
 
 .shelf-filter-select:focus {
-    border-color: #ff4e63;
+    border-color: none;
 }
 
 /* ══ VIEW TOGGLE ══ */
@@ -141,7 +141,7 @@
 
 .shelf-view-btn.active {
     background: #fff;
-    color: #ff4e63;
+    color: #b5651d;
     box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
 
@@ -255,7 +255,7 @@
 }
 
 .shelf-read-btn {
-    background: #ff4e63;
+    background: #b5651d;
     color: #fff;
     border: none;
     padding: 8px 18px;
@@ -278,8 +278,8 @@
     position: absolute;
     top: 8px;
     left: 8px;
-    background: rgba(255,78,99,0.9);
-    color: #fff;
+    background: none;
+    color: none;
     font-size: 10px;
     font-weight: 600;
     padding: 3px 8px;
@@ -381,8 +381,8 @@
 
 .shelf-tag {
     font-size: 11px;
-    background: #fff0f2;
-    color: #ff4e63;
+    background: #b5651d;
+    color: white;
     padding: 2px 8px;
     border-radius: 20px;
     font-weight: 500;
@@ -391,7 +391,7 @@
 .shelf-list-price {
     font-size: 13px;
     font-weight: 700;
-    color: #ff4e63;
+    color: black;
     margin-top: 6px;
 }
 
@@ -404,7 +404,7 @@
 }
 
 .shelf-list-read-btn {
-    background: #ff4e63;
+    background: #b5651d;
     color: #fff;
     border: none;
     padding: 8px 18px;
@@ -420,7 +420,7 @@
 }
 
 .shelf-list-read-btn:hover {
-    background: #e63e50;
+    background: #b5651d;
 }
 
 /* ══ EMPTY STATE ══ */

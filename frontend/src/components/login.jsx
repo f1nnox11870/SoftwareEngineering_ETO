@@ -33,19 +33,6 @@ function Login({ onClose, onSwitch, onLoginSuccess }) {
 
     return (
         <div className="modal-card">
-            <div className="left-panel">
-                <p className="brand-label">E-Book Platform</p>
-                <h1 className="brand-title">
-                    Library
-                    <span>ห้องสมุดดิจิทัล</span>
-                </h1>
-                <div className="divider-line"></div>
-                <p className="brand-desc">
-                    อ่านและจัดการหนังสืออิเล็กทรอนิกส์ได้ทุกที่ทุกเวลา
-                    เข้าถึงคลังหนังสือกว่าพันเล่มได้ง่ายๆ
-                </p>
-            </div>
-
             <div className="right-panel">
                 <button className="close-btn" onClick={onClose}><i className="fa fa-times"></i></button>
 

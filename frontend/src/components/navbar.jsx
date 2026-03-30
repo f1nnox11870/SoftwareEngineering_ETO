@@ -1,0 +1,463 @@
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import Login from './login';
+import Register from './Register';
+
+const MAIN_CATEGORIES = [
+    { label: 'นิยาย', key: 'novel', tab: 'นิยาย' },
+    { label: 'การ์ตูน(มังงะ)', key: 'manga', tab: 'การ์ตูน/มังงะ' },
+];
+
+// ── Notification helpers ──
+function formatTime(dateStr) {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const min = Math.floor(diff / 60000);
+    if (min < 1)   return 'เมื่อกี้';
+    if (min < 60)  return `${min} นาทีที่แล้ว`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24)   return `${hr} ชั่วโมงที่แล้ว`;
+    const day = Math.floor(hr / 24);
+    if (day === 1) return 'เมื่อวาน';
+    if (day < 7)   return `${day} วันที่แล้ว`;
+    return new Date(dateStr).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+}
+
+function buildNotifications(historyData, topupData, newChapterData = [], readIds = new Set()) {
+    const notifs = [];
+    newChapterData.forEach(c => {
+        const nid = `newchap-${c.chapter_id}`;
+        notifs.push({
+            id: nid,
+            title: `มีตอนใหม่: ${c.book_title}`,
+            desc: `ตอนที่ ${c.chapter_number}${c.chapter_title ? ` — ${c.chapter_title}` : ''} เพิ่งเผยแพร่แล้ว`,
+            time: formatTime(c.published_at),
+            unread: !readIds.has(nid),
+            tag: 'new_chapter',
+            book_id: c.book_id,
+        });
+    });
+    topupData.forEach(t => {
+        const nid = `topup-${t.id}`;
+        notifs.push({
+            id: nid,
+            title: t.status === 'approved'
+                ? `เติมเหรียญสำเร็จ +${Number(t.total_coins).toLocaleString()} เหรียญ`
+                : t.status === 'rejected'
+                    ? 'คำขอเติมเหรียญถูกปฏิเสธ'
+                    : 'คำขอเติมเหรียญรอการตรวจสอบ',
+            desc: t.status === 'approved'
+                ? `ชำระ ฿${t.amount} — รับ ${Number(t.total_coins).toLocaleString()} เหรียญแล้ว`
+                : t.status === 'rejected'
+                    ? (t.note || 'กรุณาติดต่อสนับสนุน')
+                    : `แพ็กเกจ ฿${t.amount} — รอแอดมินตรวจสอบ`,
+            time: formatTime(t.created_at),
+            unread: !readIds.has(nid) && t.status === 'approved',
+        });
+    });
+    return notifs.slice(0, 20);
+}
+
+function loadReadIds() {
+    try { return new Set(JSON.parse(localStorage.getItem('notif_read_ids') || '[]')); }
+    catch { return new Set(); }
+}
+
+function saveReadId(id) {
+    try {
+        const s = loadReadIds();
+        s.add(id);
+        const arr = [...s].slice(-200);
+        localStorage.setItem('notif_read_ids', JSON.stringify(arr));
+    } catch {}
+}
+
+function Navbar() {
+    const navigate = useNavigate();
+
+    // ── Auth / UI State ──
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [username, setUsername]     = useState('');
+    const [role, setRole]             = useState(null);
+    const [profileImage, setProfileImage] = useState(null);
+    const [coins, setCoins]           = useState(null);
+    const [cartCount, setCartCount]   = useState(0);
+    const [favoriteIds, setFavoriteIds] = useState([]);
+
+    const [megaOpen, setMegaOpen]     = useState(false);
+    const [hoveredMenu, setHoveredMenu] = useState(null);
+    const [profileOpen, setProfileOpen] = useState(false);
+    const [notifOpen, setNotifOpen]   = useState(false);
+
+    const [dbCategories, setDbCategories] = useState({ novel: [], manga: [] });
+    const [navSearch, setNavSearch]   = useState('');
+
+    // ── Notification State ──
+    const [notifications, setNotifications] = useState([]);
+
+    // ── Login / Register Modal ──
+    const [modal, setModal] = useState(null); // null | 'login' | 'register'
+
+    const megaRef    = useRef(null);
+    const profileRef = useRef(null);
+    const notifRef   = useRef(null);
+    const coinInterval = useRef(null);
+
+    // ── Fetch categories ──
+    useEffect(() => {
+        axios.get('http://localhost:3001/books/categories')
+            .then(res => setDbCategories(res.data))
+            .catch(() => {});
+    }, []);
+
+    // ── Init on mount ──
+    useEffect(() => {
+        const token     = localStorage.getItem('token');
+        const user      = localStorage.getItem('username');
+        const savedRole = localStorage.getItem('role');
+
+        if (!token) return;
+
+        setIsLoggedIn(true);
+        if (user)      setUsername(user);
+        if (savedRole) setRole(savedRole);
+
+        const headers = { Authorization: `Bearer ${token}` };
+
+        axios.get('http://localhost:3001/profile', { headers })
+            .then(res => {
+                setCoins(res.data.coins ?? 0);
+                setProfileImage(res.data.image || null);
+                if (res.data.username) setUsername(res.data.username);
+                if (res.data.role)     setRole(res.data.role);
+            })
+            .catch(() => {});
+
+        axios.get('http://localhost:3001/cart', { headers })
+            .then(res => setCartCount(res.data.length || 0))
+            .catch(() => {});
+
+        axios.get('http://localhost:3001/favorites', { headers })
+            .then(res => setFavoriteIds(res.data.map(i => i.book_id)))
+            .catch(() => {});
+
+        refreshNotifications(token);
+    }, []);
+
+    // ── Coin polling ──
+    useEffect(() => {
+        if (!isLoggedIn) { clearInterval(coinInterval.current); return; }
+        const token = localStorage.getItem('token');
+        coinInterval.current = setInterval(() => {
+            axios.get('http://localhost:3001/profile', { headers: { Authorization: `Bearer ${token}` } })
+                .then(res => setCoins(res.data.coins ?? 0))
+                .catch(() => {});
+        }, 30000);
+        return () => clearInterval(coinInterval.current);
+    }, [isLoggedIn]);
+
+    // ── Close dropdowns on outside click ──
+    useEffect(() => {
+        const handler = (e) => {
+            if (megaRef.current    && !megaRef.current.contains(e.target))    setMegaOpen(false);
+            if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false);
+            if (notifRef.current   && !notifRef.current.contains(e.target))   setNotifOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    // ── Notification helpers ──
+    const refreshNotifications = async (token) => {
+        const headers = { Authorization: `Bearer ${token}` };
+        const readIds = loadReadIds();
+        const [topupRes, histRes, newChapRes] = await Promise.all([
+            axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+            axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
+            axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+        ]);
+        setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds));
+    };
+
+    const unreadCount = notifications.filter(n => n.unread).length;
+
+    const markAllRead = () => {
+        setNotifications(prev => prev.map(n => {
+            if (n.unread) saveReadId(n.id);
+            return { ...n, unread: false };
+        }));
+        const token = localStorage.getItem('token');
+        const newChapIds = notifications
+            .filter(n => n.tag === 'new_chapter' && n.unread)
+            .map(n => Number(n.id.replace('newchap-', '')));
+        if (token && newChapIds.length > 0) {
+            axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                { episodeIds: newChapIds },
+                { headers: { Authorization: `Bearer ${token}` } }
+            ).catch(() => {});
+        }
+    };
+
+    const markOneRead = (id) => {
+        saveReadId(id);
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
+        const notif = notifications.find(n => n.id === id);
+        if (notif && notif.tag === 'new_chapter') {
+            const token = localStorage.getItem('token');
+            const episodeId = Number(id.replace('newchap-', ''));
+            if (token && episodeId) {
+                axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                    { episodeIds: [episodeId] },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                ).catch(() => {});
+            }
+            if (notif.book_id) {
+                setNotifOpen(false);
+                navigate(`/read/${notif.book_id}`);
+            }
+        }
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('username');
+        setIsLoggedIn(false);
+        setUsername('');
+        setProfileOpen(false);
+        setCoins(null);
+        setCartCount(0);
+        navigate('/');
+    };
+
+    return (
+        <>
+        <header className="navbar">
+            <div className="navbar-inner">
+                <div className="nav-left">
+                    <div className="nav-logo" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
+                        <div className="nav-logo-box"><i className="fas fa-book-open"></i></div>
+                    </div>
+                    <div className="mega-wrap" ref={megaRef}>
+                        <button className="nav-hamburger" onClick={() => setMegaOpen(v => !v)}>
+                            <i className="fas fa-bars"></i><span>เลือกหมวด</span>
+                        </button>
+                        {megaOpen && (
+                            <div className="mega-menu">
+                                <div className="mega-col">
+                                    {MAIN_CATEGORIES.map(item => (
+                                        <div key={item.label}
+                                            className={`mega-item ${hoveredMenu === item.key ? 'hovered' : ''}`}
+                                            onMouseEnter={() => setHoveredMenu(item.key)}
+                                            onClick={() => { navigate(`/?tab=${encodeURIComponent(item.tab)}`); setMegaOpen(false); }}>
+                                            <span>{item.label}</span>
+                                            {dbCategories[item.key]?.length > 0 && <i className="fas fa-chevron-right"></i>}
+                                        </div>
+                                    ))}
+                                </div>
+                                {hoveredMenu && (() => {
+                                    const cat  = MAIN_CATEGORIES.find(c => c.key === hoveredMenu);
+                                    const subs = dbCategories[hoveredMenu] || [];
+                                    if (!cat || subs.length === 0) return null;
+                                    return (
+                                        <div className="mega-col">
+                                            <div className="mega-item" style={{ fontWeight: 600, color: '#b5651d' }}
+                                                onClick={() => { navigate(`/?tab=${encodeURIComponent(cat.tab)}`); setMegaOpen(false); }}>
+                                                <span>ทั้งหมด ({subs.reduce((s, c) => s + c.count, 0)})</span>
+                                            </div>
+                                            {subs.map(sub => (
+                                                <div key={sub.name} className="mega-item"
+                                                    onClick={() => { navigate(`/?tab=${encodeURIComponent(cat.tab)}&sub=${encodeURIComponent(sub.name)}`); setMegaOpen(false); }}>
+                                                    <span>{sub.name}</span>
+                                                    <span style={{ fontSize: '11px', color: '#aaa', marginLeft: 'auto' }}>{sub.count}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="nav-center">
+                    <div className="nav-search">
+                        <input
+                            type="text"
+                            placeholder="วันนี้อ่านอะไรดี?"
+                            value={navSearch}
+                            onChange={e => setNavSearch(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && navSearch.trim()) navigate(`/?search=${encodeURIComponent(navSearch)}`); }}
+                        />
+                        <button onClick={() => { if (navSearch.trim()) navigate(`/?search=${encodeURIComponent(navSearch)}`); }}>
+                            <i className="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div className="nav-right">
+                    {isLoggedIn ? (
+                        <>
+                            <div className="notif-wrap" ref={notifRef} style={{ position: 'relative' }}>
+                                <button
+                                    className="nav-icon-btn pos-rel"
+                                    onClick={() => { setNotifOpen(!notifOpen); setProfileOpen(false); }}
+                                >
+                                    <i className="fas fa-bell"></i>
+                                    {unreadCount > 0 && <span className="nbadge">{unreadCount}</span>}
+                                </button>
+
+                                {notifOpen && (
+                                    <div className="notif-dropdown">
+                                        <div className="notif-header">
+                                            <span className="notif-title">การแจ้งเตือน</span>
+                                            {unreadCount > 0 && (
+                                                <button className="notif-markall" onClick={markAllRead}>อ่านทั้งหมด</button>
+                                            )}
+                                        </div>
+                                        <div className="notif-list">
+                                            {notifications.length === 0 ? (
+                                                <div style={{ padding: '24px', textAlign: 'center', color: '#aaa', fontSize: 13 }}>
+                                                    ยังไม่มีการแจ้งเตือน
+                                                </div>
+                                            ) : (
+                                                notifications.map(n => (
+                                                    <div key={n.id} className={`notif-item ${n.unread ? 'unread' : ''}`} onClick={() => markOneRead(n.id)}>
+                                                        <div className="notif-icon-col" style={{ marginRight: 10, fontSize: 20 }}>
+                                                            {n.tag === 'new_chapter' ? '' : n.title.includes('เติมเหรียญ') ? '' : ''}
+                                                        </div>
+                                                        <div className="notif-body">
+                                                            <div className="notif-item-title">{n.title}</div>
+                                                            <div className="notif-item-desc">{n.desc}</div>
+                                                            <div className="notif-item-time">{n.time}</div>
+                                                        </div>
+                                                        {n.unread && <div className="notif-dot"></div>}
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                        <div className="notif-footer"></div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button className="nav-icon-btn pos-rel" onClick={() => navigate('/favorites')}>
+                                <i className="fas fa-heart" style={{ color: '#ff4e63' }}></i>
+                                {favoriteIds.length > 0 && <span className="nbadge red">{favoriteIds.length}</span>}
+                            </button>
+                            <button className="nav-icon-btn pos-rel" onClick={() => navigate('/cart')}>
+                                <i className="fas fa-shopping-cart"></i>
+                                {cartCount > 0 && <span className="nbadge red">{cartCount}</span>}
+                            </button>
+                            <div className="profile-wrap" ref={profileRef}>
+                                <button className="nav-user-btn" onClick={() => setProfileOpen(v => !v)}>
+                                    {profileImage
+                                        ? <img src={profileImage} alt="Profile" className="nav-avatar" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                                        : <i className="fas fa-user-circle nav-avatar"></i>}
+                                    <div className="nav-user-info"><span className="nav-username">{username}</span></div>
+                                </button>
+                                {profileOpen && (
+                                    <div className="profile-dropdown">
+                                        <div className="pd-header">
+                                            {profileImage
+                                                ? <img src={profileImage} alt="Profile" className="pd-avatar-icon" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                : <i className="fas fa-user-circle pd-avatar-icon"></i>}
+                                            <div><div className="pd-name">{username}</div></div>
+                                        </div>
+                                        {coins !== null && (
+                                            <>
+                                                <div className="pd-divider"></div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', alignItems: 'center' }}>
+                                                    <div style={{ color: '#555', fontWeight: 'bold' }}>
+                                                        <i className="fas fa-coins" style={{ color: '#f1c40f', marginRight: '8px' }}></i>
+                                                        <span>เหรียญของฉัน</span>
+                                                    </div>
+                                                    <span style={{ color: '#ff4e63', fontWeight: 'bold', fontSize: '14px' }}>{coins.toLocaleString()}</span>
+                                                </div>
+                                            </>
+                                        )}
+                                        <div className="pd-divider"></div>
+                                        <div className="pd-item" onClick={() => navigate('/myshelf')}><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
+                                        <div className="pd-item" onClick={() => navigate('/history')}><i className="fas fa-history"></i> ประวัติซื้อ</div>
+                                        <div className="pd-item" onClick={() => navigate('/topup')}><i className="fas fa-coins"></i> ซื้อเหรียญ</div>
+                                        <div className="pd-item" onClick={() => navigate('/transaction')}><i className="fas fa-exchange-alt"></i> รายการเติมเงิน</div>
+                                        {role === 'admin' && (
+                                            <>
+                                                <div className="pd-divider"></div>
+                                                <div className="pd-group-title" style={{ padding: '6px 20px 4px', fontSize: 11, color: '#aaa', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' }}>Admin</div>
+                                                <div className="pd-item" onClick={() => navigate('/admin')}><i className="fas fa-cogs"></i> จัดการเนื้อหา</div>
+                                                <div className="pd-item" onClick={() => navigate('/admin-topup')}><i className="fas fa-file-invoice-dollar"></i> ตรวจสอบสลิป</div>
+                                            </>
+                                        )}
+                                        <div className="pd-divider"></div>
+                                        <div className="pd-item" onClick={() => navigate('/settingprofile')}><i className="fas fa-cog"></i> ตั้งค่าบัญชี</div>
+                                        <div className="pd-divider"></div>
+                                        <div className="pd-logout" onClick={handleLogout}><i className="fas fa-sign-out-alt"></i> ออกจากระบบ</div>
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <button className="btn-login" onClick={() => setModal('login')}>เข้าสู่ระบบ</button>
+                            <button className="btn-register" onClick={() => setModal('register')}>สมัครสมาชิก</button>
+                        </>
+                    )}
+                </div>
+            </div>
+        </header>
+
+        {/* ── Login / Register Modal ── */}
+        {modal && (
+            <div
+                className="modal-overlay"
+                onClick={e => { if (e.target.classList.contains('modal-overlay')) setModal(null); }}
+                style={{
+                    position: 'fixed', inset: 0, zIndex: 99999,
+                    background: 'rgba(0,0,0,0.5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '20px',
+                    backdropFilter: 'blur(4px)',
+                }}
+            >
+                {modal === 'login' ? (
+                    <Login
+                        onClose={() => setModal(null)}
+                        onSwitch={() => setModal('register')}
+                        onLoginSuccess={(name) => {
+                            setIsLoggedIn(true);
+                            setUsername(name);
+                            setModal(null);
+                            const token = localStorage.getItem('token');
+                            const savedRole = localStorage.getItem('role');
+                            if (savedRole) setRole(savedRole);
+                            if (token) {
+                                const headers = { Authorization: `Bearer ${token}` };
+                                axios.get('http://localhost:3001/profile', { headers })
+                                    .then(res => {
+                                        setCoins(res.data.coins ?? 0);
+                                        setProfileImage(res.data.image || null);
+                                        if (res.data.role) setRole(res.data.role);
+                                    }).catch(() => {});
+                                axios.get('http://localhost:3001/cart', { headers })
+                                    .then(res => setCartCount(res.data.length || 0)).catch(() => {});
+                                axios.get('http://localhost:3001/favorites', { headers })
+                                    .then(res => setFavoriteIds(res.data.map(i => i.book_id))).catch(() => {});
+                                refreshNotifications(token);
+                            }
+                        }}
+                    />
+                ) : (
+                    <Register
+                        onClose={() => setModal(null)}
+                        onSwitch={() => setModal('login')}
+                        onRegisterSuccess={() => {}}
+                    />
+                )}
+            </div>
+        )}
+        </>
+    );
+}
+
+export default Navbar;

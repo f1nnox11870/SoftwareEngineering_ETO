@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import '../assets/register.css';
 
 // props: onClose, onSwitch (ไป Login), onRegisterSuccess
 function Register({ onClose, onSwitch, onRegisterSuccess }) {
@@ -28,18 +29,6 @@ function Register({ onClose, onSwitch, onRegisterSuccess }) {
 
     return (
         <div className="modal-card">
-            <div className="left-panel">
-                <p className="brand-label">E-Book Platform</p>
-                <h1 className="brand-title">
-                    Library
-                    <span>ห้องสมุดดิจิทัล</span>
-                </h1>
-                <div className="divider-line"></div>
-                <p className="brand-desc">
-                    สมัครสมาชิกฟรี เข้าถึงหนังสืออิเล็กทรอนิกส์
-                    คลังหนังสือกว่าพันเล่มได้ทุกที่ทุกเวลา
-                </p>
-            </div>
 
             <div className="right-panel">
                 <button className="close-btn" onClick={onClose}><i className="fa fa-times"></i></button>

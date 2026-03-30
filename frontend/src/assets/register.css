@@ -1,0 +1,15 @@
+
+.left-panel {
+    background: gray;
+    color: white;
+}
+
+.submit-btn {
+    background: #b5651d;
+    color: white;
+    border: none;
+}
+
+.submit-btn:hover {
+    background: #b5651d;
+}

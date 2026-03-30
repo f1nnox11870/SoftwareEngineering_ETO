@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap');
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+button, a, input, select, textarea, [tabindex] { outline: none !important; }
+button:focus, button:focus-visible, a:focus, a:focus-visible { outline: none !important; box-shadow: none !important; }
 
 body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
 .home-page { min-height: 100vh; background: #f5f5f5; }
@@ -211,15 +213,16 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
     border-bottom: 2.5px solid transparent;
     transition: color 0.15s, border-color 0.15s;
     white-space: nowrap; margin-bottom: -1px;
+    border-radius: 0;
 }
 .sub-tab:hover { color: #b5651d; }
-.sub-tab.active { color: #b5651d; border-bottom-color: #b5651d; }
+.sub-tab.active { color: #b5651d; border-bottom: 2.5px solid #b5651d; border-radius: 0; }
 
 /* ══════════════════════════════════════
    HERO BANNER
 ══════════════════════════════════════ */
 .banner-section {
-    max-width: 1280px; margin: 16px auto 0; padding: 0 56px;
+    max-width: 1280px; margin: 8px auto 0; padding: 0 56px;
 }
 .banner-viewport {
     position: relative; display: flex; align-items: stretch;
@@ -348,8 +351,8 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
     opacity: 0;
 }
 .bcard:hover .bcard-fav { opacity: 1; }
-.bcard-fav.active { opacity: 1; color: #b5651d; background: #fff; }
-.bcard-fav:hover { color: #b5651d; }
+.bcard-fav.active { opacity: 1; color: red; background: #fff; }
+.bcard-fav:hover { color: red; }
 
 /* Info */
 .bcard-info { padding: 8px 4px 4px; }
@@ -589,7 +592,7 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
     top: 5px;
     right: 5px;
     background: rgba(255, 255, 255, 0.85);
-    color: #ff4e63;
+    color: #b5651d;
     width: 26px;
     height: 26px;
     border-radius: 50%;
@@ -628,7 +631,7 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: #ff4e63;
+    background: #b5651d;
     color: #fff;
     border: none;
     font-size: 16px;
@@ -674,7 +677,7 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
 .bcard-price-bottom {
     font-size: 13px;
     font-weight: 600;
-    color: #ff4e63;
+    color: #b5651d;
 }
 /* ══════════════════════════════════════
    MODERN NAVBAR
@@ -742,7 +745,7 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
 /* เอฟเฟกต์ตอนกดพิมพ์ค้นหา */
 .search-input:focus {
     background: #ffffff;
-    border-color: #ff4e63;
+    border-color: #b5651d;
     box-shadow: 0 0 0 4px rgba(255, 78, 99, 0.15); /* วงแหวนสีแดงรอบๆ */
 }
 
@@ -784,7 +787,7 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
 
 .nav-btn:hover {
     background: #f1f5f9;
-    color: #ff4e63; /* เปลี่ยนเป็นสีแดงตอนเอาเมาส์ชี้ */
+    color: #b5651d; /* เปลี่ยนเป็นสีแดงตอนเอาเมาส์ชี้ */
     transform: translateY(-2px); /* เด้งขึ้นนิดๆ */
 }
 
@@ -793,7 +796,7 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
     position: absolute;
     top: 6px;
     right: 6px;
-    background: #ff4e63;
+    background: #b5651d;
     color: #fff;
     font-size: 10px;
     font-weight: bold;
@@ -815,7 +818,7 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
     border: 1px solid #ffe4e6;
     padding: 8px 16px;
     border-radius: 30px;
-    color: #ff4e63;
+    color: #b5651d;
     font-weight: bold;
     font-size: 15px;
     cursor: pointer;
@@ -841,7 +844,7 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
 }
 
 .profile-pic:hover {
-    border-color: #ff4e63;
+    border-color: #b5651d;
     box-shadow: 0 0 0 4px rgba(255, 78, 99, 0.1);
 }
 /* เพิ่มใน style.css */
@@ -863,4 +866,140 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
     .view-all-section div[style*="grid-template-columns"] {
         grid-template-columns: repeat(2, 1fr) !important; /* มือถือเหลือ 2 อัน */
     }
+}
+                @keyframes slideUp {
+                    from { transform: translateY(24px); opacity: 0; }
+                    to   { transform: translateY(0);    opacity: 1; }
+                }
+                /* section heading aligned with navbar */
+                .section-heading {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 12px;
+                    padding: 0 40px;
+                    max-width: 1280px;
+                    margin-left: auto;
+                    margin-right: auto;
+                    margin-bottom: 12px;
+                }
+                .section-heading-title {
+                    margin: 0;
+                    font-size: 20px;
+                    font-weight: 700;
+                    color: #1a1a2e;
+                    line-height: 1.2;
+                }
+                .section-heading-all {
+                    background: none;
+                    border: none;
+                    color: #b5651d;
+                    font-weight: 700;
+                    font-size: 14px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    padding: 0;
+                    white-space: nowrap;
+                }
+                .section-heading-all:hover { text-decoration: underline; }
+                /* bcard2 heart hover */
+                .bcard2-stars:hover i { transform: scale(1.2); }
+                .bcard2-stars i { transition: color 0.2s, transform 0.15s; display: inline-block; }
+                /* ── bcard2: new book card design ── */
+.bcard2 {
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+    width: 160px;
+    min-width: 160px;
+    max-width: 160px;
+    flex-shrink: 0;
+}
+.bcard2:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.13);
+}
+.bcard2-cover {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3/4;
+    overflow: hidden;
+    background: #f0f0f0;
+}
+.bcard2-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s;
+}
+.bcard2:hover .bcard2-img { transform: scale(1.04); }
+.bcard2-no-img {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 40px; color: #ccc; background: #f5f5f5;
+}
+.bcard2-vol {
+    position: absolute; bottom: 8px; left: 8px;
+    background: rgba(0,0,0,0.62);
+    color: #fff; font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px;
+    letter-spacing: 0.3px;
+}
+.bcard2-owned {
+    position: absolute; top: 8px; left: 8px;
+    background: #2ecc71; color: #fff;
+    font-size: 10px; font-weight: 700;
+    padding: 3px 8px; border-radius: 4px;
+}
+.bcard2-body {
+    padding: 10px 12px 12px;
+    display: flex; flex-direction: column; gap: 3px;
+    flex: 1;
+}
+.bcard2-title {
+    font-size: 13px; font-weight: 700; color: #1a1a2e;
+    line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
+    margin-bottom: 2px;
+}
+.bcard2-author {
+    font-size: 11px; color: #777;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bcard2-cat {
+    font-size: 10px; color: #b5651d; font-weight: 600;
+    margin-top: 1px;
+}
+.bcard2-stars {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 11px; color: #f0a500; margin-top: 2px;
+}
+.bcard2-stars span { color: #888; font-size: 11px; }
+.bcard2-footer {
+    display: flex; justify-content: space-between;
+    align-items: center; margin-top: 6px;
+}
+.bcard2-price {
+    font-size: 14px; font-weight: 800; color: #222;
+}
+.bcard2-cart {
+    width: 30px; height: 30px;
+    border-radius: 50%; border: 1.5px solid #ddd;
+    background: #fff; color: #555;
+    font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+}
+.bcard2-cart:hover {
+    background: #b5651d; color: #fff; border-color: #b5651d;
 }

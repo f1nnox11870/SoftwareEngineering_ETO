@@ -225,7 +225,8 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
 .sub-tabs {
     background: #fff;
     width: 100%;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+    border: none !important; 
+    box-shadow: none !important;
 }
 .sub-tabs-inner {
     width: 100%; max-width: 1280px; margin: 0 auto; padding: 0 40px;
@@ -503,7 +504,7 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
 /* ── Hero ── */
 .topup-hero {
     background: #fff !important;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: none;
     padding: 20px 0 !important;
     width: 100%;
 }
@@ -518,10 +519,10 @@ body { font-family: 'Sarabun', sans-serif; background: #f5f5f5; color: #222; }
     color: #aaa; font-size: 14px; margin-bottom: 14px;
 }
 .topup-breadcrumb-home {
-    cursor: pointer; color: #aaa; font-size: 15px;
-    transition: color 0.15s;
+    cursor: pointer; color: #555; font-size: 15px;
+    
 }
-.topup-breadcrumb-home:hover { color: #b5651d; }
+.topup-breadcrumb-home:hover { color:#555; }
 .topup-breadcrumb-cur { color: #555; font-weight: 600; }
 
 .topup-balance-card {

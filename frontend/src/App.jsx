@@ -11,7 +11,7 @@ import ProtectedRoute from './ProtectedRoute'
 import Favorites from './components/Favorites';
 import Admin from './components/Admin';
 import History from './components/History'
-import SettingProfile from './components/settingprofile'
+import SettingProfile from './components/Settingprofile'
 import Read from './components/Read'
 import MyShelf from './components/myshelf'
 import AdminTopup from './components/AdminTopup';

@@ -2,23 +2,27 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import '../assets/myshelf.css';
+import Navbar from './navbar';
 
-const MENU_ITEMS = [
-    { label: 'นิยาย',        subs: ['นิยายรักโรแมนติก','นิยายวาย','นิยายแฟนตาซี','นิยายสืบสวน','นิยายกำลังภายใน','ไลท์โนเวล','วรรณกรรมทั่วไป','นิยายยูริ','กวีนิพนธ์','แฟนเฟิค'] },
-    { label: 'การ์ตูน',      subs: [] },
-    { label: 'อีบุ๊กทั่วไป', subs: [] },
-    { label: 'นิตยสาร',      subs: [] },
-    { label: 'หนังสือพิมพ์', subs: [] },
-    { label: 'อีบุ๊กจัดชุด', subs: [] },
-];
 
-const MOCK_NOTIFICATIONS = [
-    { id: 1, icon: '🪙', title: 'เติมเหรียญสำเร็จ',   desc: 'คุณได้รับ 150 เหรียญเรียบร้อยแล้ว',           time: '5 นาทีที่แล้ว',    unread: true  },
-    { id: 2, icon: '🔥', title: 'โปรโมชั่นพิเศษ!',    desc: 'ซื้อเหรียญวันนี้รับโบนัสพิเศษสูงสุด 30%',     time: '1 ชั่วโมงที่แล้ว', unread: true  },
-    { id: 3, icon: '📚', title: 'หนังสือใหม่มาแล้ว',  desc: 'Record of Ragnarok เล่ม 12 วางจำหน่ายแล้ว',  time: '3 ชั่วโมงที่แล้ว', unread: false },
-    { id: 4, icon: '🎉', title: 'ยินดีต้อนรับ!',       desc: 'สมัครสมาชิกสำเร็จ รับเหรียญฟรี 20 เหรียญ',   time: 'เมื่อวาน',          unread: false },
-    { id: 5, icon: '💳', title: 'ประวัติการซื้อ',      desc: 'คุณซื้อ "นิยายรักสุดขอบฟ้า" เรียบร้อยแล้ว', time: '2 วันที่แล้ว',      unread: false },
+const MAIN_CATEGORIES = [
+    { label: 'นิยาย',           key: 'novel', tab: 'นิยาย'          },
+    { label: 'การ์ตูน(มังงะ)', key: 'manga', tab: 'การ์ตูน/มังงะ'  },
 ];
+//  Notification helpers 
+function formatTime(dateStr) {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const min = Math.floor(diff / 60000);
+    if (min < 1)   return 'เมื่อกี้';
+    if (min < 60)  return `${min} นาทีที่แล้ว`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24)   return `${hr} ชั่วโมงที่แล้ว`;
+    const day = Math.floor(hr / 24);
+    if (day === 1) return 'เมื่อวาน';
+    if (day < 7)   return `${day} วันที่แล้ว`;
+    return new Date(dateStr).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+}
 
 // ── ฟอร์แมตวันที่ ──
 const formatDate = (dateStr) => {
@@ -26,31 +30,81 @@ const formatDate = (dateStr) => {
     const d = new Date(dateStr);
     return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
 };
+function getImageUrl(path, fallback = 'https://via.placeholder.com/175x260?text=No+Cover') {
+    if (!path) return fallback;
+    if (path.startsWith('http')) return path;
+
+    // กันเคสไม่มี /
+    const clean = path.replace(/^\/+/, '');
+    return `http://localhost:3001/${clean}`;
+}
+
+// ฟังก์ชันสร้าง Array การแจ้งเตือน
+function buildNotifications(historyData, topupData, newChapterData = [], readIds = new Set()) {
+    const notifs = [];
+    newChapterData.forEach(c => {
+        const nid = `newchap-${c.chapter_id}`;
+        notifs.push({
+            id: nid, title: `มีตอนใหม่: ${c.book_title}`,
+            desc: `ตอนที่ ${c.chapter_number}${c.chapter_title ? ` — ${c.chapter_title}` : ''} เพิ่งเผยแพร่แล้ว`,
+            time: formatTime(c.published_at), unread: !readIds.has(nid), tag: 'new_chapter', book_id: c.book_id,
+        });
+    });
+    topupData.forEach(t => {
+        const nid = `topup-${t.id}`;
+        notifs.push({
+            id: nid,
+            title: t.status === 'approved' ? `เติมเหรียญสำเร็จ +${Number(t.total_coins).toLocaleString()} เหรียญ` : t.status === 'rejected' ? 'คำขอเติมเหรียญถูกปฏิเสธ' : 'คำขอเติมเหรียญรอการตรวจสอบ',
+            desc: t.status === 'approved' ? `ชำระ ฿${t.amount} — รับ ${Number(t.total_coins).toLocaleString()} เหรียญแล้ว` : t.status === 'rejected' ? (t.note || 'กรุณาติดต่อสนับสนุน') : `แพ็กเกจ ฿${t.amount} — รอแอดมินตรวจสอบ`,
+            time: formatTime(t.created_at), unread: !readIds.has(nid) && t.status === 'approved'
+        });
+    });
+    return notifs.slice(0, 20);
+}
+
+// ระบบจัดการ ID ที่อ่านแล้วใน LocalStorage
+function loadReadIds() {
+    try { return new Set(JSON.parse(localStorage.getItem('notif_read_ids') || '[]')); }
+    catch { return new Set(); }
+}
+function saveReadId(id) {
+    try {
+        const s = loadReadIds();
+        s.add(id);
+        const arr = [...s].slice(-200);
+        localStorage.setItem('notif_read_ids', JSON.stringify(arr));
+    } catch {}
+}
 
 function MyShelf() {
     const navigate = useNavigate();
 
-    // ── Auth / UI ──
+    // ── Auth / UI State (เหมือน Topup.jsx) ──
     const [isLoggedIn, setIsLoggedIn]     = useState(false);
     const [username, setUsername]         = useState('');
     const [role, setRole]                 = useState(null);
     const [profileImage, setProfileImage] = useState(null);
     const [coins, setCoins]               = useState(null);
     const [cartCount, setCartCount]       = useState(0);
+    const [favoriteIds, setFavoriteIds]   = useState([]);
+    const [navSearch, setNavSearch]       = useState('');
     const [megaOpen, setMegaOpen]         = useState(false);
     const [hoveredMenu, setHoveredMenu]   = useState(null);
+    const [dbCategories, setDbCategories] = useState({ novel: [], manga: [] });
     const [profileOpen, setProfileOpen]   = useState(false);
-    const [notifOpen, setNotifOpen]       = useState(false);
-    const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+    const [notifications, setNotifications] = useState([]);
+    const [notifOpen, setNotifOpen]         = useState(false);
+    
 
-    // ── Shelf ──
-    const [books, setBooks]       = useState([]);
+
+    // ── Shelf State ──
     const [loading, setLoading]   = useState(true);
     const [viewMode, setViewMode] = useState('grid');   // 'grid' | 'list'
     const [search, setSearch]     = useState('');
     const [filterCat, setFilterCat] = useState('ทั้งหมด');
     const [categories, setCategories] = useState(['ทั้งหมด']);
-    // 🔻 แยก State สำหรับหนังสือทั้ง 2 แบบ และ State ของ Tab ที่กำลังเลือก
+    
+    // ── หนังสือ ──
     const [fullBooks, setFullBooks] = useState([]);
     const [partialBooks, setPartialBooks] = useState([]);
     const [activeTab, setActiveTab] = useState('FULL'); // 'FULL' = เหมาเล่ม, 'PARTIAL' = รายตอน
@@ -60,6 +114,16 @@ function MyShelf() {
     const notifRef   = useRef(null);
     const coinInterval = useRef(null);
 
+
+    // ══════════════════════════════════════════
+    //  Fetch: ดึงข้อมูลหมวดหมู่จาก DB (เหมือน Topup)
+    // ══════════════════════════════════════════
+    useEffect(() => {
+        axios.get('http://localhost:3001/books/categories')
+            .then(res => setDbCategories(res.data))
+            .catch(() => {});
+    }, []);
+
     // ══════════════════════════════════════════
     //  Fetch: หนังสือในชั้น
     // ══════════════════════════════════════════
@@ -67,111 +131,81 @@ function MyShelf() {
         const token = localStorage.getItem('token');
         if (!token) return;
         
-        setLoading(true); // 🔻 1. สั่งเปิดโหลดตอนเริ่มดึงข้อมูล
-        
-        try {
-            // 1. ดึงหนังสือเหมาเล่ม
-            const resFull = await axios.get('http://localhost:3001/library', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setFullBooks(resFull.data);
-
-            // 2. ดึงหนังสือซื้อแยกตอน
-            const resPartial = await axios.get('http://localhost:3001/library/episodes', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setPartialBooks(resPartial.data);
-            
-        } catch (error) {
-            console.error("Error fetching library:", error);
-        } finally {
-            setLoading(false); // 🔻 2. สำคัญมาก! ดึงเสร็จแล้วต้องสั่งปิดโหลดตรงนี้ 🔻
-        }
-    };
-
-    // ใช้ useEffect ตัวเดิม แต่เรียก fetchLibrary() ที่เราเพิ่งอัปเดต
-    useEffect(() => {
-        fetchLibrary();
-    }, []);
-    const fetchShelf = async () => {
-        const token = localStorage.getItem('token');
-        if (!token) return;
         setLoading(true);
         try {
-            const res = await axios.get('http://localhost:3001/library', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            const data = res.data || [];
-            setBooks(data);
-            // สร้าง category list ไดนามิค
-            const cats = ['ทั้งหมด', ...new Set(data.map(b => b.category).filter(Boolean))];
+            const [resFull, resPartial] = await Promise.all([
+                axios.get('http://localhost:3001/library', { headers: { Authorization: `Bearer ${token}` } }),
+                axios.get('http://localhost:3001/library/episodes', { headers: { Authorization: `Bearer ${token}` } })
+            ]);
+            
+            setFullBooks(resFull.data || []);
+            setPartialBooks(resPartial.data || []);
+
+            // สร้าง Categories ไดนามิกจากหนังสือที่มี
+            const allBooks = [...(resFull.data || []), ...(resPartial.data || [])];
+            const cats = ['ทั้งหมด', ...new Set(allBooks.map(b => b.category).filter(Boolean))];
             setCategories(cats);
-        } catch (err) {
-            console.error('Fetch shelf error:', err);
+        } catch (error) {
+            console.error("Error fetching library:", error);
         } finally {
             setLoading(false);
         }
     };
 
     // ══════════════════════════════════════════
-    //  Fetch: เหรียญ + รูปโปรไฟล์
+    //  Polling เหรียญทุก 30 วิ (หลัง login แล้ว)
     // ══════════════════════════════════════════
     useEffect(() => {
-        const fetchCoins = async () => {
-            const token = localStorage.getItem('token');
-            if (!token) return;
-            try {
-                const res = await axios.get('http://localhost:3001/profile', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setCoins(res.data.coins ?? 0);
-                setProfileImage(res.data.image || null);
-            } catch {
-                setCoins(0);
-            }
-        };
-        if (isLoggedIn) {
-            fetchCoins();
-            coinInterval.current = setInterval(fetchCoins, 30000);
-            return () => clearInterval(coinInterval.current);
-        } else {
-            setCoins(null);
-            clearInterval(coinInterval.current);
-        }
+        if (!isLoggedIn) { clearInterval(coinInterval.current); return; }
+        const token = localStorage.getItem('token');
+        coinInterval.current = setInterval(() => {
+            axios.get('http://localhost:3001/profile', { headers: { Authorization: `Bearer ${token}` } })
+                .then(res => setCoins(res.data.coins ?? 0))
+                .catch(() => {});
+        }, 30000);
         return () => clearInterval(coinInterval.current);
     }, [isLoggedIn]);
 
     // ══════════════════════════════════════════
-    //  Fetch: จำนวนตะกร้า
-    // ══════════════════════════════════════════
-    const fetchCartCount = async () => {
-        const token = localStorage.getItem('token');
-        if (!token) return;
-        try {
-            const res = await axios.get('http://localhost:3001/cart', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setCartCount(res.data.length);
-        } catch { /* ignore */ }
-    };
-
-    // ══════════════════════════════════════════
-    //  Init
+    //  Init (รันครั้งเดียวตอน mount)
     // ══════════════════════════════════════════
     useEffect(() => {
-        const token    = localStorage.getItem('token');
-        const user     = localStorage.getItem('username');
+        const token     = localStorage.getItem('token');
+        const user      = localStorage.getItem('username');
         const savedRole = localStorage.getItem('role');
-        if (token) {
-            setIsLoggedIn(true);
-            if (user) setUsername(user);
-            if (savedRole) setRole(savedRole);
-            fetchLibrary();
-            fetchCartCount();
-        } else {
-            navigate('/');
-        }
-    }, [navigate]);
+
+        if (!token) { navigate('/'); return; }
+
+        // เซ็ตจาก localStorage ก่อน ให้ navbar แสดงได้ทันที
+        setIsLoggedIn(true);
+        if (user)      setUsername(user);
+        if (savedRole) setRole(savedRole);
+
+        const headers = { Authorization: `Bearer ${token}` };
+
+        // Profile (เหรียญ + รูป)
+        axios.get('http://localhost:3001/profile', { headers })
+            .then(res => {
+                setCoins(res.data.coins ?? 0);
+                setProfileImage(res.data.image || null);
+                if (res.data.username) setUsername(res.data.username);
+                if (res.data.role)     setRole(res.data.role);
+            })
+            .catch(() => {});
+
+        // ตะกร้า + Favorites
+        axios.get('http://localhost:3001/cart', { headers })
+            .then(res => setCartCount(res.data.length || 0))
+            .catch(() => {});
+        axios.get('http://localhost:3001/favorites', { headers })
+            .then(res => setFavoriteIds(res.data.map(i => i.book_id)))
+            .catch(() => {});
+
+        // หนังสือในชั้น + Notifications
+        fetchLibrary();
+        refreshNotifications(token);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ══════════════════════════════════════════
     //  Close dropdowns on outside click
@@ -186,12 +220,57 @@ function MyShelf() {
         return () => document.removeEventListener('mousedown', h);
     }, []);
 
-    // ── Notification helpers ──
     const unreadCount  = notifications.filter(n => n.unread).length;
-    const markAllRead  = () => setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
-    const markOneRead  = (id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
+    const markAllRead = () => {
+        setNotifications(prev => prev.map(n => {
+            if (n.unread) saveReadId(n.id);
+            return { ...n, unread: false };
+        }));
+        // บันทึก new_chapter ที่ยังไม่เคย seen ไปยัง backend ด้วย
+        const token = localStorage.getItem('token');
+        const newChapIds = notifications
+            .filter(n => n.tag === 'new_chapter' && n.unread)
+            .map(n => Number(n.id.replace('newchap-', '')));
+        if (token && newChapIds.length > 0) {
+            axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                { episodeIds: newChapIds },
+                { headers: { Authorization: `Bearer ${token}` } }
+            ).catch(() => {});
+        }
+    };
+    const markOneRead = (id) => {
+        saveReadId(id);  // บันทึกลง localStorage ทันที
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
+        // ถ้าเป็น new_chapter → บันทึก backend + navigate ไปหน้าเรื่องนั้น
+        const notif = notifications.find(n => n.id === id);
+        if (notif && notif.tag === 'new_chapter') {
+            const token = localStorage.getItem('token');
+            const episodeId = Number(id.replace('newchap-', ''));
+            if (token && episodeId) {
+                axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                    { episodeIds: [episodeId] },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                ).catch(() => {});
+            }
+            if (notif.book_id) {
+                setNotifOpen(false);
+                navigate(`/read/${notif.book_id}`);
+            }
+        }
+    };
 
-    // ── Logout ──
+    const refreshNotifications = async (token) => {
+        const headers = { Authorization: `Bearer ${token}` };
+        const readIds = loadReadIds();   // โหลด IDs ที่เคยอ่านแล้วจาก localStorage
+        const [topupRes, histRes, newChapRes] = await Promise.all([
+            axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+            axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
+            axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+        ]);
+        setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds));
+    };
+
+
     const handleLogout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('username');
@@ -204,10 +283,7 @@ function MyShelf() {
     };
 
     // ── ฟิลเตอร์หนังสือ ──
-    // ── 1. เลือกหนังสือตาม Tab ──
     const displayBooks = activeTab === 'FULL' ? fullBooks : partialBooks;
-
-    // ── 2. ฟิลเตอร์หนังสือจาก Tab นั้นๆ ──
     const filteredBooks = displayBooks.filter(b => {
         const matchSearch = b.title?.toLowerCase().includes(search.toLowerCase()) ||
                             b.author?.toLowerCase().includes(search.toLowerCase());
@@ -215,198 +291,27 @@ function MyShelf() {
         return matchSearch && matchCat;
     });
 
-    // ── 3. นับ stats ──
     const totalBooks    = displayBooks.length;
     const totalCoinsSpent = displayBooks.reduce((sum, b) => sum + (b.price || 0), 0);
     const uniqueCats    = new Set(displayBooks.map(b => b.category).filter(Boolean)).size;
 
     return (
-        <div className="shelf-page">
-            {/* ═════════ 1. NAVBAR (เหมือน Home.jsx) ═════════ */}
-            <header className="navbar">
-                <div className="navbar-inner">
-
-                    <div className="nav-left">
-                        <div className="nav-logo" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
-                            <div className="nav-logo-box">
-                                <i className="fas fa-book-open"></i>
-                            </div>
-                        </div>
-
-                        <div className="mega-wrap" ref={megaRef}>
-                            <button className="nav-hamburger" onClick={() => setMegaOpen(v => !v)}>
-                                <i className="fas fa-bars"></i>
-                                <span>เลือกหมวด</span>
-                            </button>
-                            {megaOpen && (
-                                <div className="mega-menu">
-                                    <div className="mega-col">
-                                        {MENU_ITEMS.map(item => (
-                                            <div key={item.label}
-                                                className={`mega-item ${hoveredMenu === item.label ? 'hovered' : ''}`}
-                                                onMouseEnter={() => setHoveredMenu(item.label)}>
-                                                <span>{item.label}</span>
-                                                {item.subs.length > 0 && <i className="fas fa-chevron-right"></i>}
-                                            </div>
-                                        ))}
-                                    </div>
-                                    {hoveredMenu === 'นิยาย' && (
-                                        <div className="mega-col">
-                                            <div className="mega-item hovered">
-                                                <span>นิยายรักโรแมนติก</span>
-                                                <i className="fas fa-chevron-right"></i>
-                                            </div>
-                                            {MENU_ITEMS[0].subs.slice(1).map(s => (
-                                                <div key={s} className="mega-item"><span>{s}</span></div>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {hoveredMenu === 'นิยาย' && (
-                                        <div className="mega-col">
-                                            {ROMANCE_SUBS.map(s => (
-                                                <div key={s} className="mega-item"><span>{s}</span></div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="nav-center">
-                        <div className="nav-search">
-                            <input type="text" placeholder="วันนี้อ่านอะไรดี?" />
-                            <button><i className="fas fa-search"></i></button>
-                        </div>
-                    </div>
-
-                    <div className="nav-right">
-                        {isLoggedIn ? (
-                            <>
-                                {role === 'admin' && (
-                                    <button
-                                        className="btn-admin"
-                                        onClick={() => navigate('/admin')}
-                                    >
-                                        จัดการเนื้อหา
-                                    </button>
-                                )}
-                                <div className="notif-wrap" ref={notifRef}>
-                                    <button className="nav-icon-btn pos-rel" onClick={() => { setNotifOpen(v => !v); setProfileOpen(false); }}>
-                                        <i className="fas fa-bell"></i>
-                                        {unreadCount > 0 && <span className="nbadge">{unreadCount}</span>}
-                                    </button>
-                                    {notifOpen && (
-                                        <div className="notif-dropdown">
-                                            <div className="notif-header">
-                                                <span className="notif-title">การแจ้งเตือน</span>
-                                                {unreadCount > 0 && (
-                                                    <button className="notif-markall" onClick={markAllRead}>อ่านทั้งหมด</button>
-                                                )}
-                                            </div>
-                                            <div className="notif-list">
-                                                {notifications.map(n => (
-                                                    <div key={n.id} className={`notif-item ${n.unread ? 'unread' : ''}`} onClick={() => markOneRead(n.id)}>
-                                                        <div className="notif-icon">{n.icon}</div>
-                                                        <div className="notif-body">
-                                                            <div className="notif-item-title">{n.title}</div>
-                                                            <div className="notif-item-desc">{n.desc}</div>
-                                                            <div className="notif-item-time">{n.time}</div>
-                                                        </div>
-                                                        {n.unread && <div className="notif-dot"></div>}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <div className="notif-footer" onClick={() => setNotifOpen(false)}>ดูการแจ้งเตือนทั้งหมด</div>
-                                        </div>
-                                    )}
-                                </div>
-                                <button
-                                    className="nav-icon-btn pos-rel"
-                                    onClick={() => navigate('/favorites')}
-                                >
-                                    <i className="fas fa-heart"></i>
-                                    <span className="nbadge red">1</span>
-                                </button>
-                                <button className="nav-icon-btn pos-rel" onClick={() => navigate('/cart')}>
-                                    <i className="fas fa-shopping-cart"></i>
-                                    {cartCount > 0 && <span className="nbadge red">{cartCount}</span>}
-                                </button>
-                                <div className="profile-wrap" ref={profileRef}>
-                                    <button className="nav-user-btn" onClick={() => setProfileOpen(v => !v)}>
-                                        {profileImage ? (
-                                            <img src={profileImage} alt="Profile" className="nav-avatar" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
-                                        ) : (
-                                            <i className="fas fa-user-circle nav-avatar"></i>
-                                        )}
-                                        <div className="nav-user-info">
-                                            <span className="nav-username">{username}</span>
-                                        </div>
-                                    </button>
-                                    {profileOpen && (
-                                        <div className="profile-dropdown">
-                                            <div className="pd-header">
-                                                {profileImage ? (
-                                                    <img src={profileImage} alt="Profile" className="pd-avatar-icon" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
-                                                ) : (
-                                                    <i className="fas fa-user-circle pd-avatar-icon"></i>
-                                                )}
-                                                <div>
-                                                    <div className="pd-name">{username}</div>
-                                                </div>
-                                            </div>
-                                            {coins !== null && (
-                                                <>
-                                                    <div className="pd-divider"></div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', alignItems: 'center' }}>
-                                                        <div style={{ color: '#555', fontWeight: 'bold' }}>
-                                                            <i className="fas fa-coins" style={{ color: '#f1c40f', marginRight: '8px' }}></i>
-                                                            <span>เหรียญของฉัน</span>
-                                                        </div>
-                                                        <span style={{ color: '#ff4e63', fontWeight: 'bold', fontSize: '16px' }}>
-                                                            {coins.toLocaleString()} 🪙
-                                                        </span>
-                                                    </div>
-                                                </>
-                                            )}
-                                            <div className="pd-divider"></div>
-                                            <div className="pd-item" onClick={() => navigate('/myshelf')}><i className="fas fa-layer-group"></i> ชั้นหนังสือ</div>
-                                            <div className="pd-item" onClick={() => navigate('/history')}><i className="fas fa-history"></i> ประวัติซื้อ</div>
-                                            <div className="pd-item" onClick={() => navigate('/topup')}><i className="fas fa-coins"></i> ซื้อเหรียญ</div>
-                                            <div className="pd-divider"></div>
-                                            <div className="pd-item" onClick={() => navigate('/settingprofile')}><i className="fas fa-cog"></i> ตั้งค่าบัญชี</div>
-                                            <div className="pd-divider"></div>
-                                            <div className="pd-logout" onClick={handleLogout}>
-                                                <i className="fas fa-sign-out-alt"></i> ออกจากระบบ
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <button className="btn-login" onClick={() => navigate('/')}>เข้าสู่ระบบ</button>
-                                <button className="btn-register" onClick={() => navigate('/')}>สมัครสมาชิก</button>
-                            </>
-                        )}
-                    </div>
-                </div>
-            </header>
-
-            {/* ══════════════════ HERO / BREADCRUMB ══════════════════ */}
-            <div className="shelf-hero">
-                <div className="shelf-page-inner">
-                    <div className="shelf-breadcrumb">
-                        <span className="shelf-breadcrumb-home" onClick={() => navigate('/')}>
-                            <i className="fas fa-house"></i>
+        <div className="home-page shelf-page">
+           <Navbar/>
+            {/* ══════════════════ 2. HERO / BREADCRUMB ══════════════════ */}
+            <div className="topup-hero">
+                <div className="topup-page-inner">
+                    <div className="topup-breadcrumb">
+                        <span className="topup-breadcrumb-home" onClick={() => navigate('/')}>
+                            <i className="fas fa-house" style={{ color: '#999' }}></i>
                         </span>
-                        <i className="fas fa-angle-right" style={{ fontSize: 12 }}></i>
-                        <span className="shelf-breadcrumb-cur">ชั้นหนังสือของฉัน</span>
+                        <i className="fas fa-angle-right" style={{ fontSize: 12, color: '#aaa', margin: '0 8px' }}></i>
+                        <span className="topup-breadcrumb-cur">ชั้นหนังสือของฉัน</span>
                     </div>
                 </div>
             </div>
 
-            {/* ══════════════════ MAIN CONTENT ══════════════════ */}
+            {/* ══════════════════ 3. MAIN CONTENT ══════════════════ */}
             <div className="shelf-container">
 
                 {/* ── Stats Bar ── */}
@@ -444,7 +349,7 @@ function MyShelf() {
                 {/* ── Top Bar ── */}
                 <div className="shelf-topbar">
                     <h2 className="shelf-title">
-                        <i className="fas fa-layer-group" style={{ marginRight: '10px', color: '#ff4e63' }}></i>
+                        <i className="fas fa-layer-group" style={{ marginRight: '10px', color: 'gray' }}></i>
                         ชั้นหนังสือของฉัน
                     </h2>
                     <div className="shelf-controls">
@@ -488,29 +393,31 @@ function MyShelf() {
                         </div>
                     </div>
                 </div>
-                {/* 🔻 เพิ่มปุ่ม Tab ตรงนี้เลยครับ 🔻 */}
+
+                {/* ── Tab สลับหนังสือ ── */}
                 <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', marginTop: '20px' }}>
                     <button 
                         onClick={() => setActiveTab('FULL')}
                         style={{ 
                             padding: '10px 20px', borderRadius: '20px', border: 'none', 
-                            background: activeTab === 'FULL' ? '#ff4e63' : '#eee', 
+                            background: activeTab === 'FULL' ? '#b5651d' : '#eee', 
                             color: activeTab === 'FULL' ? '#fff' : '#555', 
                             cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.3s'
                         }}>
-                        📚 ซื้อแบบเหมาเล่ม ({fullBooks.length})
+                         ซื้อแบบเหมาเล่ม ({fullBooks.length})
                     </button>
                     <button 
                         onClick={() => setActiveTab('PARTIAL')}
                         style={{ 
                             padding: '10px 20px', borderRadius: '20px', border: 'none', 
-                            background: activeTab === 'PARTIAL' ? '#ff4e63' : '#eee', 
+                            background: activeTab === 'PARTIAL' ? '#b5651d' : '#eee', 
                             color: activeTab === 'PARTIAL' ? '#fff' : '#555', 
                             cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.3s'
                         }}>
-                        📑 ซื้อแบบแยกตอน ({partialBooks.length})
+                         ซื้อแบบแยกตอน ({partialBooks.length})
                     </button>
                 </div>
+
                 {/* ── Content ── */}
                 {loading ? (
                     <div className="shelf-loading">
@@ -519,74 +426,8 @@ function MyShelf() {
                     </div>
                 ) : filteredBooks.length === 0 ? (
                     <div className="shelf-empty">
-                        <div className="shelf-empty-icon">📚</div>
-                        {/* 🔻 1. ปุ่มสลับ Tab (วางไว้เหนือส่วนที่แสดงหนังสือ) 🔻 */}
-                <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', marginTop: '10px' }}>
-                    <button 
-                        onClick={() => setActiveTab('FULL')}
-                        style={{ 
-                            padding: '10px 20px', borderRadius: '20px', border: 'none', 
-                            background: activeTab === 'FULL' ? '#ff4e63' : '#eee', 
-                            color: activeTab === 'FULL' ? '#fff' : '#555', 
-                            cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.3s'
-                        }}>
-                        📚 ซื้อแบบเหมาเล่ม ({fullBooks.length})
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('PARTIAL')}
-                        style={{ 
-                            padding: '10px 20px', borderRadius: '20px', border: 'none', 
-                            background: activeTab === 'PARTIAL' ? '#ff4e63' : '#eee', 
-                            color: activeTab === 'PARTIAL' ? '#fff' : '#555', 
-                            cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.3s'
-                        }}>
-                        📑 ซื้อแบบแยกตอน ({partialBooks.length})
-                    </button>
-                </div>
-
-                {/* 🔻 2. ส่วนแสดงหนังสือตาม Tab ที่เลือก 🔻 */}
-                {(() => {
-                    const displayBooks = activeTab === 'FULL' ? fullBooks : partialBooks;
-
-                    return (
-                        <>
-                            {displayBooks.length === 0 ? (
-                                <div className="empty-shelf" style={{ textAlign: 'center', padding: '50px' }}>
-                                    <i className="fas fa-book-open" style={{ fontSize: '40px', color: '#ccc' }}></i>
-                                    <p style={{ marginTop: '10px', color: '#888' }}>คุณยังไม่มีหนังสือในหมวดหมู่นี้</p>
-                                </div>
-                            ) : (
-                                viewMode === 'grid' ? (
-                                    <div className="shelf-grid">
-                                        {displayBooks.map(book => (
-                                            /* 🌟 โค้ด Card แบบ Grid เดิมของคุณ เอามาใส่ตรงนี้ได้เลย 🌟 */
-                                            <div key={book.id} className="shelf-card" onClick={() => navigate(`/read/${book.id}`)}>
-                                                <img src={book.image ? `http://localhost:3001${book.image}` : 'https://via.placeholder.com/175x260?text=No+Cover'} alt={book.title} />
-                                                <div className="shelf-info">
-                                                    <h3 className="shelf-title">{book.title}</h3>
-                                                    {/* ใส่ส่วนอื่นๆ ของการ์ดเดิมที่คุณมีต่อได้เลย... */}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="shelf-list-view">
-                                        {displayBooks.map(book => (
-                                            /* 🌟 โค้ด Card แบบ List เดิมของคุณ เอามาใส่ตรงนี้ได้เลย 🌟 */
-                                            <div key={book.id} className="shelf-list-item" onClick={() => navigate(`/read/${book.id}`)}>
-                                                <img className="shelf-list-cover" src={book.image ? `http://localhost:3001${book.image}` : 'https://via.placeholder.com/65x90?text=N/A'} alt={book.title} />
-                                                <div className="shelf-list-details">
-                                                    <h3 className="shelf-list-title">{book.title}</h3>
-                                                    {/* ใส่ส่วนอื่นๆ ของการ์ดเดิมที่คุณมีต่อได้เลย... */}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )
-                            )}
-                        </>
-                    );
-                })()}
+                        <div className="shelf-empty-icon"></div>
+                        <p>คุณยังไม่มีหนังสือในหมวดหมู่นี้</p>
                     </div>
                 ) : viewMode === 'grid' ? (
                     /* ════ GRID VIEW ════ */
@@ -595,7 +436,7 @@ function MyShelf() {
                             <div key={book.id} className="shelf-book-card"
                                 onClick={() => navigate(`/read/${book.id}`)}>
                                 <div className="shelf-book-cover-wrap">
-                                    <img
+                                          <img
                                         src={book.image || 'https://via.placeholder.com/175x260?text=No+Cover'}
                                         alt={book.title}
                                         onError={e => { e.target.src = 'https://via.placeholder.com/175x260?text=No+Cover'; }}
@@ -614,8 +455,8 @@ function MyShelf() {
                                     <p className="shelf-book-title">{book.title}</p>
                                     <p className="shelf-book-author">{book.author}</p>
                                     <div className="shelf-book-meta">
-                                        <span style={{ color: '#ff4e63', fontWeight: 600, fontSize: '12px' }}>
-                                            {book.price > 0 ? `${book.price.toLocaleString()} 🪙` : 'ฟรี'}
+                                        <span style={{ color: 'black', fontWeight: 'bold', fontSize: '14px' }}>
+                                            {book.price > 0 ? `${book.price.toLocaleString()} เหรียญ` : 'ฟรี'}
                                         </span>
                                         <span className="shelf-book-date">{formatDate(book.purchased_at)}</span>
                                     </div>
@@ -643,12 +484,12 @@ function MyShelf() {
                                     </p>
                                     <div className="shelf-list-tags">
                                         {book.category && <span className="shelf-tag">{book.category}</span>}
-                                        <span className="shelf-tag" style={{ background: '#f0fff4', color: '#2ecc71' }}>
-                                            <i className="fas fa-check" style={{ marginRight: '3px' }}></i>เป็นเจ้าของ
+                                        <span className="shelf-tag" style={{ background: 'gray', color: 'white' }}>
+                                            เป็นเจ้าของ
                                         </span>
                                     </div>
                                     <p className="shelf-list-price">
-                                        {book.price > 0 ? `ราคา ${book.price.toLocaleString()} 🪙` : 'หนังสือฟรี'}
+                                        {book.price > 0 ? `ราคา ${book.price.toLocaleString()} เหรียญ` : 'หนังสือฟรี'}
                                     </p>
                                 </div>
                                 <span className="shelf-list-date">
