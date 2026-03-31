@@ -9,6 +9,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const app = express();
+const http = require('http'); // เพิ่มบรรทัดนี้
+const { Server } = require('socket.io'); // เพิ่มบรรทัดนี้
 const port = 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_fallback_secret';
 
@@ -27,7 +29,13 @@ const postUploadDir = path.join(__dirname, 'uploads', 'posts');
 if (!fs.existsSync(postUploadDir)) {
     fs.mkdirSync(postUploadDir, { recursive: true });
 }
-
+const server = http.createServer(app); // สร้าง http server หุ้ม app
+const io = new Server(server, {
+    cors: {
+        origin: ["http://localhost:3000", "http://localhost:5173"],
+        methods: ["GET", "POST"]
+    }
+});
 // ตั้งค่า Multer สำหรับ Post
 const postStorage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -86,12 +94,22 @@ db.run(`CREATE TABLE IF NOT EXISTS books (
     title TEXT,
     author TEXT,
     category TEXT,
+    genre TEXT,
     description TEXT,
     image TEXT,
     price REAL DEFAULT 0,
     likes INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`);
+)`, () => {
+    // Migration: เพิ่ม column genre สำหรับ DB เดิมที่ยังไม่มี
+    db.run(`ALTER TABLE books ADD COLUMN genre TEXT`, (err) => {
+        if (!err) console.log("✅ Added 'genre' column to books table.");
+    });
+    // Migration: เพิ่ม column episode_count สำหรับ performance
+    db.run(`ALTER TABLE books ADD COLUMN episode_count INTEGER DEFAULT 0`, (err) => {
+        if (!err) console.log("✅ Added 'episode_count' column to books table.");
+    });
+});
 
 // 📖 episodes table
 db.run(`CREATE TABLE IF NOT EXISTS episodes (
@@ -253,9 +271,9 @@ db.run(`CREATE TABLE IF NOT EXISTS user_notifications (
 
 // สร้าง admin
 const createAdmin = async () => {
-    const username = 'admin123';
-    const password = '11111111';
-    const email = 'admin@example.com';
+    const username = 'AETOM_NApat@916';
+    const password = 'QWERMBMFT916';
+    const email = 'AETOM_NApat_916@example.com';
     const hashedPassword = await bcrypt.hash(password, 10);
     const adminCoins = 999999; 
 
@@ -548,16 +566,16 @@ app.delete('/cart/:id', verifyToken, (req, res) => {
 });
 
 app.post('/admin/add-book', verifyToken, (req, res) => {
-    const { title, author, category, description, image, price } = req.body; 
+    const { title, author, category, genre, description, image, price } = req.body; 
 
     if (req.user.role !== 'admin') {
         return res.status(403).json({ message: "Forbidden: Admin only" });
     }
 
-    const sql = `INSERT INTO books (title, author, category, description, image, price, likes) 
-                 VALUES (?, ?, ?, ?, ?, ?, 0)`;
+    const sql = `INSERT INTO books (title, author, category, genre, description, image, price, likes) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 0)`;
     
-    db.run(sql, [title, author, category, description, image, price || 0], function(err) {
+    db.run(sql, [title, author, category, genre || null, description, image, price || 0], function(err) {
         if (err) {
             console.error("Database error:", err.message);
             return res.status(500).json({ message: 'Database error', error: err.message });
@@ -566,6 +584,33 @@ app.post('/admin/add-book', verifyToken, (req, res) => {
             message: 'Book added successfully', 
             bookId: this.lastID 
         });
+    });
+});
+
+// ── [PUT] admin แก้ไขข้อมูลหนังสือ ──────────────────────────────────────────
+app.put('/admin/update-book/:id', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden: Admin only" });
+
+    const bookId = req.params.id;
+    const { title, author, category, genre, description, image, price } = req.body;
+
+    const sql = `UPDATE books SET title = ?, author = ?, category = ?, genre = ?, description = ?, image = ?, price = ? WHERE id = ?`;
+    db.run(sql, [title, author, category, genre || null, description, image, price || 0, bookId], function(err) {
+        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+        res.json({ message: 'อัปเดตหนังสือสำเร็จ', bookId });
+    });
+});
+
+// ── [DELETE] admin ลบหนังสือ ─────────────────────────────────────────────────
+app.delete('/admin/delete-book/:id', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden: Admin only" });
+
+    const bookId = req.params.id;
+    db.run(`DELETE FROM books WHERE id = ?`, [bookId], function(err) {
+        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+        // ลบ episodes ที่เกี่ยวข้องด้วย
+        db.run(`DELETE FROM episodes WHERE book_id = ?`, [bookId]);
+        res.json({ message: 'ลบหนังสือสำเร็จ' });
     });
 });
 
@@ -587,10 +632,111 @@ app.post('/admin/add-episode', verifyToken, (req, res) => {
         return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
     }
 
-    const sql = `INSERT INTO episodes (book_id, episode_number, title, content) VALUES (?, ?, ?, ?)`;
-    db.run(sql, [book_id, episode_number || 1, title, content], function(err) {
+    // เพิ่ม created_at และ CURRENT_TIMESTAMP เพื่อบันทึกเวลาปัจจุบันเสมอ
+    const sql = `INSERT INTO episodes (book_id, episode_number, title, content, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`;
+    const params = [book_id, episode_number || 1, title, content];
+
+    db.run(sql, params, function(err) {
         if (err) return res.status(500).json({ message: 'Database error', error: err.message });
-        res.status(201).json({ message: 'เพิ่มตอนสำเร็จ', episodeId: this.lastID });
+
+        const newEpisodeId = this.lastID;
+
+        // ดึงชื่อหนังสือ แล้วค่อยแจ้งเตือน
+        db.get(`SELECT title FROM books WHERE id = ?`, [book_id], (err2, book) => {
+            const bookTitle = book ? book.title : `หนังสือ #${book_id}`;
+            const epLabel   = `ตอนที่ ${episode_number || 1}${title ? ` — ${title}` : ''}`;
+
+            // แจ้งเตือน real-time ทุก client (เหมือนเดิม)
+            io.emit('new_episode_alert', {
+                book_id:    book_id,
+                episode_id: newEpisodeId,
+                message:    'มีการอัปเดตตอนใหม่!'
+            });
+
+            // หา user ทุกคนที่ซื้อหนังสือเล่มนี้แบบเล่ม (purchased_books)
+            db.all(
+                `SELECT DISTINCT user_id FROM purchased_books WHERE book_id = ?`,
+                [book_id],
+                (err3, buyers) => {
+                    if (err3 || !buyers || buyers.length === 0) return;
+
+                    const notifSql = `INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES (?, 'new_episode', ?, ?, ?)`;
+                    buyers.forEach(({ user_id }) => {
+                        db.run(notifSql, [
+                            user_id,
+                            `มีตอนใหม่: ${bookTitle}`,
+                            `${epLabel} เพิ่งเผยแพร่แล้ว — แตะเพื่ออ่านเลย!`,
+                            newEpisodeId
+                        ], (e) => { if (e) console.error('user_notifications insert error:', e.message); });
+                    });
+                }
+            );
+        });
+
+        res.status(201).json({ message: 'เพิ่มตอนสำเร็จ', episodeId: newEpisodeId });
+    });
+});
+
+// ── [PUT] admin แก้ไขตอน + แจ้งเตือน user ที่ซื้อแบบเล่ม ──────────────────
+app.put('/admin/update-episode/:id', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden: Admin only" });
+    }
+
+    const episodeId = req.params.id;
+    const { episode_number, title, content } = req.body;
+
+    if (!title || !content) {
+        return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+    }
+
+    // ดึง book_id และข้อมูลตอนเดิมก่อน
+    db.get(`SELECT book_id, episode_number, title FROM episodes WHERE id = ?`, [episodeId], (err, ep) => {
+        if (err || !ep) return res.status(404).json({ message: "ไม่พบตอนนี้" });
+
+        const finalEpNumber = episode_number || ep.episode_number;
+
+        db.run(
+            `UPDATE episodes SET episode_number = ?, title = ?, content = ? WHERE id = ?`,
+            [finalEpNumber, title, content, episodeId],
+            function(err2) {
+                if (err2) return res.status(500).json({ message: 'Database error', error: err2.message });
+
+                // ดึงชื่อหนังสือ แล้วแจ้งเตือน
+                db.get(`SELECT title FROM books WHERE id = ?`, [ep.book_id], (err3, book) => {
+                    const bookTitle = book ? book.title : `หนังสือ #${ep.book_id}`;
+                    const epLabel   = `ตอนที่ ${finalEpNumber}${title ? ` — ${title}` : ''}`;
+
+                    // แจ้งเตือน real-time ทุก client
+                    io.emit('new_episode_alert', {
+                        book_id:    ep.book_id,
+                        episode_id: episodeId,
+                        message:    'มีการอัปเดตตอน!'
+                    });
+
+                    // หา user ที่ซื้อแบบเล่ม แล้วบันทึก user_notifications
+                    db.all(
+                        `SELECT DISTINCT user_id FROM purchased_books WHERE book_id = ?`,
+                        [ep.book_id],
+                        (err4, buyers) => {
+                            if (err4 || !buyers || buyers.length === 0) return;
+
+                            const notifSql = `INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES (?, 'episode_updated', ?, ?, ?)`;
+                            buyers.forEach(({ user_id }) => {
+                                db.run(notifSql, [
+                                    user_id,
+                                    `อัปเดตเนื้อหา: ${bookTitle}`,
+                                    `${epLabel} ได้รับการอัปเดตเนื้อหาใหม่แล้ว`,
+                                    episodeId
+                                ], (e) => { if (e) console.error('user_notifications insert error:', e.message); });
+                            });
+                        }
+                    );
+                });
+
+                res.json({ message: 'อัปเดตตอนสำเร็จ', episodeId });
+            }
+        );
     });
 });
 
@@ -744,39 +890,94 @@ app.put('/profile/image', verifyToken, (req, res) => {
 });
 
 app.get('/books', (req, res) => {
-    const { category, subcategory } = req.query;
-    let sql = `SELECT * FROM books`;
+    const { category, subcategory, search, sortBy, genre } = req.query;
     const params = [];
     const conditions = [];
 
+    // ── หมวดหมู่หลัก ──────────────────────────────────────────────────────────
+    const categoryMap = {
+        'นิยาย': ['นิยาย', 'นิยายรักโรแมนติก', 'นิยายวาย', 'นิยายแฟนตาซี', 'นิยายสืบสวน',
+                   'นิยายกำลังภายใน', 'ไลท์โนเวล', 'วรรณกรรมทั่วไป', 'นิยายยูริ', 'กวีนิพนธ์', 'แฟนเฟิค'],
+        'การ์ตูน/มังงะ': ['การ์ตูน', 'มังงะ', 'การ์ตูนโรแมนติก', 'การ์ตูนแอคชั่น',
+                           'การ์ตูนแฟนตาซี', 'การ์ตูนตลก', 'การ์ตูนสยองขวัญ', 'การ์ตูนกีฬา',
+                           'การ์ตูนวาย', 'การ์ตูนยูริ']
+    };
+
     if (category) {
-        // map หมวดใหญ่ → ค่าใน DB
-        const categoryMap = {
-            'นิยาย': ['นิยาย', 'นิยายรักโรแมนติก', 'นิยายวาย', 'นิยายแฟนตาซี', 'นิยายสืบสวน',
-                       'นิยายกำลังภายใน', 'ไลท์โนเวล', 'วรรณกรรมทั่วไป', 'นิยายยูริ', 'กวีนิพนธ์', 'แฟนเฟิค'],
-            'การ์ตูน/มังงะ': ['การ์ตูน', 'มังงะ', 'การ์ตูนโรแมนติก', 'การ์ตูนแอคชั่น',
-                               'การ์ตูนแฟนตาซี', 'การ์ตูนตลก', 'การ์ตูนสยองขวัญ', 'การ์ตูนกีฬา',
-                               'การ์ตูนวาย', 'การ์ตูนยูริ']
-        };
         if (subcategory) {
-            conditions.push(`category = ?`);
+            conditions.push(`b.category = ?`);
             params.push(subcategory);
         } else if (categoryMap[category]) {
             const placeholders = categoryMap[category].map(() => '?').join(',');
-            conditions.push(`category IN (${placeholders})`);
+            conditions.push(`b.category IN (${placeholders})`);
             params.push(...categoryMap[category]);
         } else {
-            conditions.push(`category = ?`);
+            conditions.push(`b.category = ?`);
             params.push(category);
         }
     }
 
+    // ── ค้นหาด้วยชื่อหนังสือ / ชื่อผู้แต่ง ───────────────────────────────────
+    if (search && search.trim()) {
+        conditions.push(`(b.title LIKE ? OR b.author LIKE ?)`);
+        const q = `%${search.trim()}%`;
+        params.push(q, q);
+    }
+
+    // ── กรองตามแนวหนังสือ (genre) ──────────────────────────────────────────────
+    if (genre && genre.trim()) {
+        conditions.push(`b.genre LIKE ?`);
+        params.push(`%${genre.trim()}%`);
+    }
+
+    // ── นับจำนวนตอนจาก episodes table ─────────────────────────────────────────
+    let sql = `
+        SELECT b.*,
+               COUNT(DISTINCT e.id) as episode_count
+        FROM books b
+        LEFT JOIN episodes e ON e.book_id = b.id
+    `;
+
     if (conditions.length > 0) sql += ` WHERE ` + conditions.join(' AND ');
-    sql += ` ORDER BY created_at DESC`;
+    sql += ` GROUP BY b.id`;
+
+    // ── เรียงลำดับ ─────────────────────────────────────────────────────────────
+    const sortMap = {
+        'price_asc':    `b.price ASC`,
+        'price_desc':   `b.price DESC`,
+        'episodes_asc': `episode_count ASC`,
+        'episodes_desc':`episode_count DESC`,
+        'popular':      `b.likes DESC`,
+        'author_asc':   `b.author ASC`,
+        'author_desc':  `b.author DESC`,
+        'newest':       `b.created_at DESC`,
+        'oldest':       `b.created_at ASC`,
+    };
+    sql += ` ORDER BY ` + (sortMap[sortBy] || `b.created_at DESC`);
 
     db.all(sql, params, (err, rows) => {
-        if (err) return res.status(500).json({ message: 'Database error' });
+        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
         res.json(rows);
+    });
+});
+
+// ── [GET] ดึงรายการแนวหนังสือ (genre) ทั้งหมดที่มีในระบบ ──────────────────────
+app.get('/books/genres', (req, res) => {
+    // คืน list แนวหนังสือ predefined + แนวที่ admin เพิ่มเองใน DB
+    const predefined = [
+        'โรแมนติก', 'แฟนตาซี', 'แอคชั่น', 'ผจญภัย', 'สืบสวนสอบสวน',
+        'สยองขวัญ', 'ตลกขบขัน', 'ดราม่า', 'วิทยาศาสตร์', 'ชีวิตประจำวัน',
+        'กีฬา', 'ประวัติศาสตร์', 'จิตวิทยา', 'เกม', 'ซูเปอร์ฮีโร่',
+        'วาย (BL)', 'ยูริ (GL)', 'ไอดอล', 'โรงเรียน', 'ครอบครัว'
+    ];
+
+    db.all(`SELECT DISTINCT genre FROM books WHERE genre IS NOT NULL AND genre != ''`, [], (err, rows) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+
+        // รวม genre จาก DB เข้ากับ predefined แล้ว deduplicate
+        const fromDb = rows.map(r => r.genre).filter(Boolean);
+        const merged = [...new Set([...predefined, ...fromDb])].sort((a, b) => a.localeCompare(b, 'th'));
+        res.json(merged);
     });
 });
 
@@ -1172,12 +1373,13 @@ app.get('/generate-qr', (req, res) => {
     });
 });
 app.get('/topup-history', authenticateToken, (req, res) => {
-    // ลอง console.log ดูว่า req.user มีค่าอะไรออกมา
-    console.log("User from Token:", req.user); 
-
-    const userId = req.user.id; // หรือ req.user.userId ตามที่คุณ sign ไว้ตอน login
+    const userId = req.user.id;
     db.all(
-        `SELECT * FROM topup_requests WHERE user_id = ? ORDER BY created_at DESC`, 
+        `SELECT t.*, u.username
+         FROM topup_requests t
+         JOIN users u ON t.user_id = u.id
+         WHERE t.user_id = ?
+         ORDER BY t.created_at DESC`, 
         [userId], 
         (err, rows) => {
             if (err) return res.status(500).json(err);
@@ -1189,11 +1391,6 @@ app.get('/topup-history', authenticateToken, (req, res) => {
 // 📢 API สำหรับระบบโพสต์ "เร็วๆ นี้" (News Feed)
 // ==========================================
 
-// 1. [GET] ดึงข้อมูลโพสต์ทั้งหมด
-// 1. [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมคอมเมนต์
-// 1. [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมคอมเมนต์ (แบบ Safe Mode ไม่ Join ตารางอื่น)
-// 1. [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมคอมเมนต์และชื่อคนพิมพ์
-// [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมบอกสถานะว่า User นี้เคยกดโหวตหรือยัง (Optional Token)
 // [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมคอมเมนต์ และสถานะการโหวตของ User ปัจจุบัน
 app.get('/posts', (req, res) => {
     // 1. ดึงโพสต์ทั้งหมด
@@ -1201,7 +1398,6 @@ app.get('/posts', (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
 
         // 2. ดึงคอมเมนต์ พร้อมชื่อคนคอมเมนต์
-        // ดึง u.image แล้วเปลี่ยนชื่อเป็น profile_image ชั่วคราวตอนส่งไป Frontend
         const sqlComments = `
             SELECT c.*, u.username, u.image AS profile_image
             FROM post_comments c
@@ -1227,7 +1423,6 @@ app.get('/posts', (req, res) => {
 
             // 4. ถ้ามี Token ดึงประวัติการโหวตของ User คนนี้
             try {
-                // (ถ้าไฟล์คุณยังไม่ import jwt ให้เติม const jwt = require('jsonwebtoken'); ไว้ด้านบนไฟล์ด้วยนะครับ)
                 const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
                 const userId = decoded.id;
 
@@ -1262,7 +1457,6 @@ app.post('/admin/add-post', verifyToken, uploadPost.single('image'), (req, res) 
 
     const sql = "INSERT INTO posts (caption, image_url) VALUES (?, ?)";
     
-    // SQLite ใช้ db.run สำหรับ INSERT/UPDATE/DELETE
     db.run(sql, [caption, imageUrl], function(err) {
         if (err) {
             console.error("Error creating post:", err);
@@ -1296,40 +1490,31 @@ app.delete('/admin/delete-post/:id', verifyToken, (req, res) => {
 });
 app.post('/posts/:id/like', (req, res) => {
     const postId = req.params.id;
-    // สั่งให้เพิ่มค่า likes_count ขึ้น 1
     db.run("UPDATE posts SET likes_count = likes_count + 1 WHERE id = ?", [postId], function(err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ message: "เพิ่มไลค์สำเร็จ" });
     });
 });
 
-// 2. [POST] กด Dislike
-// 2. [POST] โหวตโพสต์ (Like / Dislike) - จำกัด 1 คนต่อ 1 โพสต์
 // [POST] โหวตโพสต์ (Like / Dislike) - จำกัด 1 คนต่อ 1 โพสต์ พร้อมระบบกดซ้ำยกเลิก (Toggle)
 app.post('/posts/:id/vote', verifyToken, (req, res) => {
     const postId = req.params.id;
-    const userId = req.user.id; // ดึง ID คนล็อกอินจาก Token
-    const { type } = req.body; // รับค่ามาว่าเป็น 'like' หรือ 'dislike'
+    const userId = req.user.id;
+    const { type } = req.body;
 
     if (!type || !['like', 'dislike'].includes(type)) {
         return res.status(400).json({ message: "ข้อมูลประเภทโหวตไม่ถูกต้อง" });
     }
 
-    // 1. เช็คก่อนว่าคนนี้เคยโหวตโพสต์นี้ไปหรือยัง และโหวตเป็นอะไรไว้
     db.get("SELECT type FROM post_likes WHERE post_id = ? AND user_id = ?", [postId, userId], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
 
         if (row) {
-            // --- สถานการณ์: User เคยโหวตโพสต์นี้แล้ว ---
-            
             if (row.type === type) {
                 // Scenario A: กดซ้ำปุ่มเดิม -> ยกเลิกการโหวต (Undo)
-                
-                // ลบประวัติออกจากตาราง post_likes
                 db.run("DELETE FROM post_likes WHERE post_id = ? AND user_id = ?", [postId, userId], function(err2) {
                     if (err2) return res.status(500).json({ error: err2.message });
 
-                    // อัปเดตตัวเลขลดลงในตาราง posts
                     const columnToUpdate = type === 'like' ? 'likes_count' : 'dislikes_count';
                     db.run(`UPDATE posts SET ${columnToUpdate} = ${columnToUpdate} - 1 WHERE id = ?`, [postId], function(err3) {
                         if (err3) return res.status(500).json({ error: err3.message });
@@ -1339,12 +1524,9 @@ app.post('/posts/:id/vote', verifyToken, (req, res) => {
 
             } else {
                 // Scenario B: กดสลับปุ่ม (เช่น เคย Dislike ไว้ แล้วมากด Like)
-                
-                // อัปเดตประเภทโหวตในตาราง post_likes
                 db.run("UPDATE post_likes SET type = ? WHERE post_id = ? AND user_id = ?", [type, postId, userId], function(err2) {
                     if (err2) return res.status(500).json({ error: err2.message });
 
-                    // สลับตัวเลขในตาราง posts (บวกอันใหม่ ลดอันเก่า)
                     let sqlUpdatePosts = '';
                     if (type === 'like') {
                         sqlUpdatePosts = "UPDATE posts SET likes_count = likes_count + 1, dislikes_count = dislikes_count - 1 WHERE id = ?";
@@ -1360,13 +1542,10 @@ app.post('/posts/:id/vote', verifyToken, (req, res) => {
             }
 
         } else {
-            // --- สถานการณ์: User ยังไม่เคยโหวตโพสต์นี้เลย ---
-            
-            // บันทึกลงตาราง post_likes
+            // User ยังไม่เคยโหวตโพสต์นี้เลย
             db.run("INSERT INTO post_likes (post_id, user_id, type) VALUES (?, ?, ?)", [postId, userId, type], function(err2) {
                 if (err2) return res.status(500).json({ error: err2.message });
 
-                // อัปเดตตัวเลขเพิ่มขึ้นในตาราง posts
                 const columnToUpdate = type === 'like' ? 'likes_count' : 'dislikes_count';
                 db.run(`UPDATE posts SET ${columnToUpdate} = ${columnToUpdate} + 1 WHERE id = ?`, [postId], function(err3) {
                     if (err3) return res.status(500).json({ error: err3.message });
@@ -1377,7 +1556,19 @@ app.post('/posts/:id/vote', verifyToken, (req, res) => {
     });
 });
 
-// 3. (แถม) สร้าง Table สำหรับเก็บคอมเมนต์ (รันครั้งแรกมันจะสร้างให้เอง)
+// 📢 posts table
+db.run(`CREATE TABLE IF NOT EXISTS posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    caption TEXT,
+    image_url TEXT,
+    likes_count INTEGER DEFAULT 0,
+    dislikes_count INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`, (err) => {
+    if (!err) console.log("\u2705 Table 'posts' is ready.");
+});
+
+// 3. สร้าง Table สำหรับเก็บคอมเมนต์
 db.run(`CREATE TABLE IF NOT EXISTS post_comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     post_id INTEGER,
@@ -1390,7 +1581,7 @@ db.run(`CREATE TABLE IF NOT EXISTS post_comments (
 app.post('/posts/:id/comment', verifyToken, (req, res) => {
     const postId = req.params.id;
     const { text } = req.body;
-    const userId = req.user?.id || 1; // สมมติว่าดึง id คนล็อกอินมาจาก token
+    const userId = req.user?.id || 1;
 
     if (!text) return res.status(400).json({ message: "กรุณาพิมพ์ข้อความ" });
 
@@ -1399,6 +1590,7 @@ app.post('/posts/:id/comment', verifyToken, (req, res) => {
         res.json({ message: "คอมเมนต์สำเร็จ", commentId: this.lastID });
     });
 });
+
 // 1. [POST] อัปเดตประวัติการอ่าน (เรียกตอน User กดเข้าไปอ่านแต่ละตอน)
 // ==========================================
 // 📚 API สำหรับระบบจดจำประวัติการอ่าน
@@ -1414,16 +1606,13 @@ app.post('/history/update', verifyToken, (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
 
         if (row) {
-            // กรณีเคยอ่านแล้ว -> เช็คว่า "ตอนที่กำลังอ่าน" เลขเยอะกว่า "ตอนที่อ่านไกลสุด (max)" ไหม?
             if (Number(episode_number) > Number(row.max_episode_number)) {
-                // ถ้าเยอะกว่า ให้อัปเดต max_episode_number เป็นเลขใหม่
                 db.run("UPDATE reading_history SET max_episode_number = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND book_id = ?",
                     [episode_number, userId, book_id], function(err2) {
                         if (err2) return res.status(500).json({ error: err2.message });
                         return res.json({ message: "อัปเดตตอนที่อ่านไกลสุดเรียบร้อย", max_episode_number: episode_number });
                     });
             } else {
-                // ถ้าน้อยกว่า (กลับไปอ่านตอนเก่า) -> ไม่อัปเดตเลข max แต่แค่อัปเดตเวลา updated_at เฉยๆ
                 db.run("UPDATE reading_history SET updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND book_id = ?",
                     [userId, book_id], function(err2) {
                         if (err2) return res.status(500).json({ error: err2.message });
@@ -1431,7 +1620,6 @@ app.post('/history/update', verifyToken, (req, res) => {
                     });
             }
         } else {
-            // กรณีเพิ่งเคยอ่านเรื่องนี้ครั้งแรก -> สร้าง Record ใหม่
             db.run("INSERT INTO reading_history (user_id, book_id, max_episode_number) VALUES (?, ?, ?)",
                 [userId, book_id, episode_number], function(err2) {
                     if (err2) return res.status(500).json({ error: err2.message });
@@ -1449,7 +1637,6 @@ app.get('/history/:bookId', verifyToken, (req, res) => {
     db.get("SELECT max_episode_number FROM reading_history WHERE user_id = ? AND book_id = ?", [userId, bookId], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         
-        // ถ้ามีประวัติก็ส่งเลขนั้นไป ถ้าไม่มีส่ง 0
         res.json({ max_episode_number: row ? row.max_episode_number : 0 });
     });
 });
@@ -1461,35 +1648,49 @@ db.run(`CREATE TABLE IF NOT EXISTS seen_chapter_notifs (
     seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, episode_id)
 )`);
+// ── ตารางประวัติการซื้อ (History) ──
+db.run(`CREATE TABLE IF NOT EXISTS history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    book_id INTEGER,
+    title TEXT,
+    type TEXT,
+    amount INTEGER,
+    purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`, (err) => {
+    if (err) console.error("Error creating history table:", err.message);
+    else console.log("✅ History table ready.");
+});
 
-// ── [GET] ดึงตอนใหม่ของหนังสือที่ user ซื้อหรือกดใจไว้ (ยังไม่เคยเห็น) ──
-// GET /notifications/new-chapters
+// ── [GET] ดึงแจ้งเตือนตอนใหม่ (สำหรับคนที่กด Favorite หรือ ซื้อหนังสือเล่มนั้นไปแล้ว) ──────────
 app.get('/notifications/new-chapters', verifyToken, (req, res) => {
     const userId = req.user.id;
-    
-    // อัปเดตคำสั่ง SQL 
+
     const sql = `
-        SELECT e.id as episode_id, e.book_id, e.title as chapter_title, e.ep_number as chapter_number,
-               b.title as book_title, e.created_at as published_at
+        SELECT 
+            e.id as episode_id,
+            e.book_id,
+            e.episode_number,
+            e.title as episode_title,
+            e.created_at || 'Z' as created_at,
+            strftime('%d/%m/%Y %H:%M', e.created_at) as formatted_time,
+            b.title as book_title
         FROM episodes e
         JOIN books b ON e.book_id = b.id
-        WHERE (
-            -- หนังสือที่ผู้ใช้อ่าน/ซื้อ
-            e.book_id IN (SELECT DISTINCT book_id FROM purchased_episodes WHERE user_id = ?)
-            OR
-            -- หนังสือที่ผู้ใช้กดหัวใจ
-            e.book_id IN (SELECT book_id FROM favorites WHERE user_id = ?)
+        WHERE e.book_id IN (
+            SELECT book_id FROM favorites WHERE user_id = ?
+            UNION
+            SELECT book_id FROM history WHERE user_id = ? AND type = 'book'
         )
-        AND e.created_at >= datetime('now', '-7 days')
-        -- 👇 เพิ่มเงื่อนไขนี้: เอาเฉพาะตอนที่ User ยังไม่เคยกดอ่าน (ไม่มีใน seen_chapter_notifs) 👇
-        AND e.id NOT IN (SELECT episode_id FROM seen_chapter_notifs WHERE user_id = ?)
         ORDER BY e.created_at DESC
         LIMIT 20
     `;
 
-    // สังเกตว่าผมเพิ่ม userId เข้าไปอีก 1 ตัวใน Array เพื่อใช้กับเงื่อนไข NOT IN ด้านบน
-    db.all(sql, [userId, userId, userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+    db.all(sql, [userId, userId], (err, rows) => {
+        if (err) {
+            console.error("❌ Notification SQL Error:", err.message);
+            return res.status(500).json({ message: 'Database error', error: err.message });
+        }
         res.json(rows);
     });
 });
@@ -1522,7 +1723,15 @@ app.post('/notifications/new-chapters/seen', verifyToken, (req, res) => {
 app.get('/user/notifications', verifyToken, (req, res) => {
     const userId = req.user.id;
     db.all(
-        `SELECT *, created_at || 'Z' as created_at FROM user_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+        `SELECT un.*,
+                un.created_at || 'Z' as created_at,
+                strftime('%d/%m/%Y %H:%M', un.created_at) as formatted_time,
+                CASE WHEN un.type IN ('new_episode','episode_updated')
+                     THEN e.book_id ELSE NULL END as book_id
+         FROM user_notifications un
+         LEFT JOIN episodes e ON un.type IN ('new_episode','episode_updated') AND e.id = un.ref_id
+         WHERE un.user_id = ?
+         ORDER BY un.created_at DESC LIMIT 50`,
         [userId],
         (err, rows) => {
             if (err) return res.status(500).json({ message: "Database error" });
@@ -1558,7 +1767,7 @@ app.get('/admin/notifications', verifyToken, (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
 
     db.all(
-        `SELECT *, created_at || 'Z' as created_at FROM admin_notifications ORDER BY created_at DESC LIMIT 50`,
+        `SELECT *, created_at || 'Z' as created_at, strftime('%d/%m/%Y %H:%M', created_at) as formatted_time FROM admin_notifications ORDER BY created_at DESC LIMIT 50`,
         [],
         (err, rows) => {
             if (err) return res.status(500).json({ message: "Database error" });
@@ -1587,6 +1796,6 @@ app.put('/admin/notifications/:id/read', verifyToken, (req, res) => {
 });
 
 // ================= START SERVER =================
-app.listen(port, () => {
-    console.log(`🚀 Server is running on http://localhost:${port}`);
+server.listen(port, () => {
+    console.log(`🚀 Server is running on port ${port}`);
 });

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import Login from './login';
 import Register from './Register';
+import { io } from 'socket.io-client';
 
 const MAIN_CATEGORIES = [
     { label: 'นิยาย', key: 'novel', tab: 'นิยาย' },
@@ -10,11 +11,12 @@ const MAIN_CATEGORIES = [
 ];
 
 // ── Notification helpers ──
-// แปลง SQLite datetime string → Date object ให้ถูก timezone
-// SQLite ส่งมาเป็น "2026-03-31 08:06:00" (UTC, ไม่มี Z) → ต้องเติม Z
 function parseSQLiteDate(dateStr) {
     if (!dateStr) return null;
-    const normalized = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+    // ลบ 'Z' ท้ายออกก่อน (กัน double-Z) แล้วค่อยแปลง space → T แล้วต่อ Z ใหม่
+    // SQLite CURRENT_TIMESTAMP เป็น UTC เสมอ ต้องการ Z เพื่อให้ JS อ่านเป็น UTC
+    const clean = dateStr.replace(/Z$/i, '').trim();
+    const normalized = clean.includes('T') ? clean + 'Z' : clean.replace(' ', 'T') + 'Z';
     const d = new Date(normalized);
     return isNaN(d.getTime()) ? null : d;
 }
@@ -27,11 +29,10 @@ function formatTime(dateStr) {
     const diff = Date.now() - date.getTime();
     const min = Math.floor(diff / 60000);
 
-    // ถ้าเกิน 24 ชั่วโมง แสดง วัน/เดือน/ปี พร้อมเวลาจริง
     if (diff >= 24 * 60 * 60 * 1000) {
         const day   = String(date.getDate()).padStart(2, '0');
         const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year  = date.getFullYear() + 543; // แปลงเป็น พ.ศ.
+        const year  = date.getFullYear() + 543;
         const hh    = String(date.getHours()).padStart(2, '0');
         const mm    = String(date.getMinutes()).padStart(2, '0');
         return `${day}/${month}/${year} ${hh}:${mm}`;
@@ -47,13 +48,15 @@ function buildNotifications(historyData, topupData, newChapterData = [], userNot
     const notifs = [];
 
     // ── ตอนใหม่ ──
+    // แก้ไข: ใช้ episode_id, episode_number, episode_title, created_at
+    // ให้ตรงกับ field ที่ server ส่งมาจริงๆ
     newChapterData.forEach(c => {
-        const nid = `newchap-${c.chapter_id}`;
+        const nid = `newchap-${c.episode_id}`;
         notifs.push({
             id: nid,
             title: `มีตอนใหม่: ${c.book_title}`,
-            desc: `ตอนที่ ${c.chapter_number}${c.chapter_title ? ` — ${c.chapter_title}` : ''} เพิ่งเผยแพร่แล้ว`,
-            time: formatTime(c.published_at),
+            desc: `ตอนที่ ${c.episode_number}${c.episode_title ? ` — ${c.episode_title}` : ''} เพิ่งเผยแพร่แล้ว`,
+            time: formatTime(c.created_at), // แก้ไข: เปลี่ยนจาก c.published_at → c.created_at
             unread: !readIds.has(nid),
             tag: 'new_chapter',
             book_id: c.book_id,
@@ -61,7 +64,6 @@ function buildNotifications(historyData, topupData, newChapterData = [], userNot
     });
 
     // ── การแจ้งเตือนเติมเหรียญจาก server (approved / rejected / pending) ──
-    // ใช้ user_notifications จาก API ใหม่ก่อน (มีสถานะจริงจาก admin)
     userNotifData.forEach(n => {
         const nid = `usernotif-${n.id}`;
         notifs.push({
@@ -72,6 +74,7 @@ function buildNotifications(historyData, topupData, newChapterData = [], userNot
             unread: !n.is_read,
             tag: n.type,
             serverNotifId: n.id,
+            book_id: n.book_id || null,
         });
     });
 
@@ -131,9 +134,10 @@ function Navbar() {
     // ── Notification State ──
     const [notifications, setNotifications] = useState([]);
     const [adminNotifications, setAdminNotifications] = useState([]);
+    const [, setTimeTick] = useState(0); // tick ทุก 1 นาที เพื่อ re-render เวลา
 
     // ── Login / Register Modal ──
-    const [modal, setModal] = useState(null); // null | 'login' | 'register'
+    const [modal, setModal] = useState(null);
 
     const megaRef    = useRef(null);
     const profileRef = useRef(null);
@@ -146,6 +150,24 @@ function Navbar() {
             .then(res => setDbCategories(res.data))
             .catch(() => {});
     }, []);
+
+    // ── Socket.IO: รับ real-time alert ──
+    useEffect(() => {
+        if (!isLoggedIn) return;
+
+        const socket = io('http://localhost:3001');
+
+        socket.on('new_episode_alert', (data) => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                refreshNotifications(token);
+            }
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [isLoggedIn]);
 
     // ── Init on mount ──
     useEffect(() => {
@@ -208,6 +230,12 @@ function Navbar() {
         return () => window.removeEventListener('topup-action', handler);
     }, []);
 
+    // ── Tick ทุก 1 นาที เพื่ออัปเดตเวลาใน notification (เช่น "5 นาทีที่แล้ว") ──
+    useEffect(() => {
+        const timer = setInterval(() => setTimeTick(t => t + 1), 60000);
+        return () => clearInterval(timer);
+    }, []);
+
     // ── Close dropdowns on outside click ──
     useEffect(() => {
         const handler = (e) => {
@@ -258,7 +286,6 @@ function Navbar() {
         await axios.put(`http://localhost:3001/admin/notifications/${notif.id}/read`, {}, {
             headers: { Authorization: `Bearer ${token}` }
         }).catch(() => {});
-        // navigate ไปหน้า admin-topup ถ้าเป็น topup_pending
         if (notif.type === 'topup_pending') {
             setNotifOpen(false);
             navigate('/admin-topup');
@@ -275,7 +302,6 @@ function Navbar() {
         }));
         const token = localStorage.getItem('token');
         if (token) {
-            // mark user_notifications ทั้งหมดบน server
             axios.put('http://localhost:3001/user/notifications/read-all', {},
                 { headers: { Authorization: `Bearer ${token}` } }
             ).catch(() => {});
@@ -298,7 +324,6 @@ function Navbar() {
         const notif = notifications.find(n => n.id === id);
         const token = localStorage.getItem('token');
 
-        // mark บน server สำหรับ user_notifications (topup approved/rejected)
         if (notif && notif.serverNotifId && token) {
             axios.put(`http://localhost:3001/user/notifications/${notif.serverNotifId}/read`, {},
                 { headers: { Authorization: `Bearer ${token}` } }
@@ -313,6 +338,13 @@ function Navbar() {
                     { headers: { Authorization: `Bearer ${token}` } }
                 ).catch(() => {});
             }
+            if (notif.book_id) {
+                setNotifOpen(false);
+                navigate(`/read/${notif.book_id}`);
+            }
+        }
+
+        if (notif && (notif.tag === 'new_episode' || notif.tag === 'episode_updated')) {
             if (notif.book_id) {
                 setNotifOpen(false);
                 navigate(`/read/${notif.book_id}`);
@@ -382,18 +414,7 @@ function Navbar() {
                 </div>
 
                 <div className="nav-center">
-                    <div className="nav-search">
-                        <input
-                            type="text"
-                            placeholder="วันนี้อ่านอะไรดี?"
-                            value={navSearch}
-                            onChange={e => setNavSearch(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter' && navSearch.trim()) navigate(`/?search=${encodeURIComponent(navSearch)}`); }}
-                        />
-                        <button onClick={() => { if (navSearch.trim()) navigate(`/?search=${encodeURIComponent(navSearch)}`); }}>
-                            <i className="fas fa-search"></i>
-                        </button>
-                    </div>
+                    
                 </div>
 
                 <div className="nav-right">
@@ -418,7 +439,7 @@ function Navbar() {
                                         </div>
                                         <div className="notif-list">
 
-                                            {/* ── ส่วน admin: คำขอเติมเหรียญรออนุมัติ ── */}
+                                            {/* ── ส่วน admin ── */}
                                             {role === 'admin' && adminNotifications.length > 0 && (
                                                 <>
                                                     <div style={{ padding: '6px 14px 4px', fontSize: 11, color: '#ff4e63', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: '#fff8f8', borderBottom: '1px solid #ffe0e5' }}>
@@ -458,11 +479,13 @@ function Navbar() {
                                                 notifications.map(n => (
                                                     <div key={n.id} className={`notif-item ${n.unread ? 'unread' : ''}`} onClick={() => markOneRead(n.id)}>
                                                         <div className="notif-icon-col" style={{ marginRight: 10, fontSize: 20 }}>
-                                                            {n.tag === 'new_chapter' ? ''
-                                                                : n.tag === 'topup_approved' ? ''
-                                                                : n.tag === 'topup_rejected' ? ''
-                                                                : n.tag === 'topup_pending' ? ''
-                                                                : n.title.includes('เติมเหรียญ') ? '' : ''}
+                                                            {n.tag === 'new_chapter' ? '📖'
+                                                                : n.tag === 'new_episode' ? '📖'
+                                                                : n.tag === 'episode_updated' ? '✏️'
+                                                                : n.tag === 'topup_approved' ? '✅'
+                                                                : n.tag === 'topup_rejected' ? '❌'
+                                                                : n.tag === 'topup_pending' ? '⏳'
+                                                                : n.title.includes('เติมเหรียญ') ? '🪙' : '🔔'}
                                                         </div>
                                                         <div className="notif-body">
                                                             <div className="notif-item-title">{n.title}</div>

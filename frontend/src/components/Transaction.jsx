@@ -109,6 +109,7 @@ const Transaction = () => {
     // ── Page state ──
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [selectedItem, setSelectedItem] = useState(null); // modal detail
 
     // ── Init ──
     useEffect(() => {
@@ -314,7 +315,7 @@ const Transaction = () => {
                             {history.map((item) => {
                                 const s = statusMap[item.status] || statusMap.pending;
                                 return (
-                                    <div key={item.id} className="txn-row">
+                                    <div key={item.id} className="txn-row" onClick={() => setSelectedItem(item)} style={{ cursor: 'pointer' }}>
                                         <div className="txn-row-left">
                                             <div className="txn-coin-dot" style={{ background: s.bg }}>
                                                 <i className="fa-solid fa-coins" style={{ color: '#f0a500' }}></i>
@@ -350,6 +351,159 @@ const Transaction = () => {
                 </div>
             </div>
 
+
+            {/* ══ TRANSACTION DETAIL MODAL ══ */}
+            {selectedItem && (() => {
+                const s = statusMap[selectedItem.status] || statusMap.pending;
+                return (
+                    <div
+                        onClick={() => setSelectedItem(null)}
+                        style={{
+                            position: 'fixed', inset: 0, zIndex: 9999,
+                            background: 'rgba(0,0,0,0.55)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            backdropFilter: 'blur(6px)',
+                            padding: '20px',
+                        }}
+                    >
+                        <div
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                                background: '#fff',
+                                borderRadius: '20px',
+                                width: '100%',
+                                maxWidth: '460px',
+                                maxHeight: '90vh',
+                                overflowY: 'auto',
+                                boxShadow: '0 24px 60px rgba(0,0,0,0.2)',
+                                animation: 'modalIn 0.25s cubic-bezier(0.34,1.56,0.64,1)',
+                            }}
+                        >
+                            {/* Header */}
+                            <div style={{
+                                padding: '20px 24px 16px',
+                                borderBottom: '1px solid #f0f0f0',
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <div style={{
+                                        width: 40, height: 40, borderRadius: '50%',
+                                        background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}>
+                                        <i className="fa-solid fa-coins" style={{ color: '#f0a500', fontSize: 18 }}></i>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontWeight: 700, fontSize: 16, color: '#1a1a2e' }}>รายละเอียดการเติมเหรียญ</div>
+                                        <div style={{ fontSize: 12, color: '#aaa' }}>#{selectedItem.id}</div>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedItem(null)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#aaa', lineHeight: 1 }}
+                                >✕</button>
+                            </div>
+
+                            {/* Body */}
+                            <div style={{ padding: '20px 24px' }}>
+
+                                {/* Status badge */}
+                                <div style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    padding: '6px 14px', borderRadius: 20,
+                                    background: s.bg, color: s.color,
+                                    fontWeight: 700, fontSize: 13, marginBottom: 20,
+                                }}>
+                                    <i className={`fas ${s.icon}`}></i> {s.label}
+                                </div>
+
+                                {/* Info rows */}
+                                {[
+                                    { label: 'ชื่อผู้ใช้',    value: selectedItem.username || localStorage.getItem('username') || '—', icon: 'fa-user' },
+                                    { label: 'จำนวนเหรียญ',   value: `${Number(selectedItem.coins).toLocaleString()} เหรียญ${selectedItem.bonus > 0 ? ` (+${selectedItem.bonus} โบนัส)` : ''}`, icon: 'fa-coins' },
+                                    { label: 'ยอดชำระ',       value: `฿${Number(selectedItem.amount).toLocaleString()}`, icon: 'fa-money-bill-wave' },
+                                    { label: 'แพ็กเกจ',       value: selectedItem.package_id || '—', icon: 'fa-box' },
+                                    { label: 'วันที่ทำรายการ', value: fmtDate(selectedItem.created_at), icon: 'fa-calendar' },
+                                    ...(selectedItem.approved_at ? [{ label: 'วันที่อนุมัติ', value: fmtDate(selectedItem.approved_at), icon: 'fa-calendar-check' }] : []),
+                                    ...(selectedItem.note ? [{ label: 'หมายเหตุ', value: selectedItem.note, icon: 'fa-circle-info' }] : []),
+                                ].map(({ label, value, icon }) => (
+                                    <div key={label} style={{
+                                        display: 'flex', alignItems: 'flex-start', gap: 12,
+                                        padding: '10px 0', borderBottom: '1px solid #f5f5f5',
+                                    }}>
+                                        <div style={{
+                                            width: 32, height: 32, borderRadius: 8,
+                                            background: '#f8f8f8', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            flexShrink: 0,
+                                        }}>
+                                            <i className={`fas ${icon}`} style={{ color: '#b5651d', fontSize: 13 }}></i>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: 11, color: '#aaa', marginBottom: 2 }}>{label}</div>
+                                            <div style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{value}</div>
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {/* Slip image */}
+                                {selectedItem.slip_image ? (
+                                    <div style={{ marginTop: 20 }}>
+                                        <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
+                                            <i className="fas fa-image" style={{ marginRight: 6 }}></i>สลิปการโอนเงิน
+                                        </div>
+                                        <div style={{
+                                            borderRadius: 12, overflow: 'hidden',
+                                            border: '1.5px solid #f0e6d8',
+                                            boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+                                        }}>
+                                            <img
+                                                src={`http://localhost:3001${selectedItem.slip_image}`}
+                                                alt="สลิปโอนเงิน"
+                                                style={{ width: '100%', display: 'block' }}
+                                                onError={e => { e.target.style.display = 'none'; }}
+                                            />
+                                        </div>
+                                        <a
+                                            href={`http://localhost:3001${selectedItem.slip_image}`}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            style={{
+                                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                                marginTop: 10, fontSize: 13, color: '#b5651d', fontWeight: 600, textDecoration: 'none',
+                                            }}
+                                        >
+                                            <i className="fas fa-arrow-up-right-from-square"></i> เปิดสลิปในแท็บใหม่
+                                        </a>
+                                    </div>
+                                ) : (
+                                    <div style={{
+                                        marginTop: 20, padding: '16px', borderRadius: 12,
+                                        background: '#fafafa', border: '1.5px dashed #e0e0e0',
+                                        textAlign: 'center', color: '#bbb', fontSize: 13,
+                                    }}>
+                                        <i className="fas fa-image" style={{ fontSize: 24, marginBottom: 8, display: 'block' }}></i>
+                                        ไม่มีสลิปแนบมา
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Footer */}
+                            <div style={{ padding: '12px 24px 20px' }}>
+                                <button
+                                    onClick={() => setSelectedItem(null)}
+                                    style={{
+                                        width: '100%', padding: '12px', borderRadius: 12,
+                                        background: '#b5651d', color: '#fff',
+                                        border: 'none', fontWeight: 700, fontSize: 15, cursor: 'pointer',
+                                    }}
+                                >
+                                    ปิด
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* ══ LOGIN/REGISTER MODAL ══ */}
             {modal && (
                 <div className="modal-overlay" onClick={handleOverlayClick}>
@@ -360,5 +514,10 @@ const Transaction = () => {
         </div>
     );
 };
+
+// add animation
+const styleTag = document.createElement('style');
+styleTag.textContent = `@keyframes modalIn { from { opacity:0; transform:scale(0.88) translateY(16px) } to { opacity:1; transform:scale(1) translateY(0) } }`;
+if (!document.head.querySelector('[data-txn-anim]')) { styleTag.setAttribute('data-txn-anim','1'); document.head.appendChild(styleTag); }
 
 export default Transaction;

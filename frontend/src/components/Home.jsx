@@ -473,6 +473,7 @@ const handleToggleFavorite = async (e, book) => {
     const [newsPosts, setNewsPosts] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState('latest');
+    const [selectedGenre, setSelectedGenre] = useState('all');
     // ดึงข้อมูลหนังสือทั้งหมดจาก Database
     useEffect(() => {
         const fetchBooks = async () => {
@@ -786,16 +787,33 @@ const novelBooks = books
     const recommendedBooks = [...books]
     .sort((a, b) => (Number(b.likes) || 0) - (Number(a.likes) || 0))
     .slice(0, 10);
+
+    // ── ฟังก์ชัน sort กลาง ──
+    const applySortFilter = (arr) => {
+        const q = searchQuery.toLowerCase();
+        return arr
+            .filter(book => {
+                const matchTitle = book.title.toLowerCase().includes(q) ||
+                    (book.author && book.author.toLowerCase().includes(q));
+                const matchGenre = selectedGenre === 'all' || book.category === selectedGenre;
+                return matchTitle && matchGenre;
+            })
+            .sort((a, b) => {
+                if (sortBy === 'priceLow')      return Number(a.price) - Number(b.price);
+                if (sortBy === 'priceHigh')     return Number(b.price) - Number(a.price);
+                if (sortBy === 'likesHigh')     return (Number(b.likes) || 0) - (Number(a.likes) || 0);
+                if (sortBy === 'likesLow')      return (Number(a.likes) || 0) - (Number(b.likes) || 0);
+                if (sortBy === 'episodesHigh')  return (Number(b.episode_count) || 0) - (Number(a.episode_count) || 0);
+                if (sortBy === 'episodesLow')   return (Number(a.episode_count) || 0) - (Number(b.episode_count) || 0);
+                if (sortBy === 'authorAZ')      return (a.author || '').localeCompare(b.author || '', 'th');
+                if (sortBy === 'authorZA')      return (b.author || '').localeCompare(a.author || '', 'th');
+                return b.id - a.id; // latest
+            });
+    };
+
     // กรองหนังสือ
-    const filteredNovels = (novelBooks || [])
-    .filter(book => book.title.toLowerCase().includes(searchQuery.toLowerCase()))
-    .sort((a, b) => {
-        if (sortBy === 'priceLow') return a.price - b.price;
-        if (sortBy === 'priceHigh') return b.price - a.price;
-        if (sortBy === 'likesLow') return (a.likes || 0) - (b.likes || 0);
-        if (sortBy === 'likesHigh') return (b.likes || 0) - (a.likes || 0);
-        return b.id - a.id; // เริ่มต้นที่ไอดีล่าสุด
-    });
+    const filteredNovels = applySortFilter(novelBooks);
+    const filteredManga  = applySortFilter(mangaBooks);
     // ตรวจสอบว่าซื้อหนังสือเล่มที่กำลังดูอยู่ (viewBook) หรือยัง
     const isOwned = isLoggedIn && Array.isArray(purchasedBooks) && viewBook 
     ? purchasedBooks.some(id => Number(id) === Number(viewBook.id))
@@ -926,14 +944,136 @@ const novelBooks = books
                     </div>
                 )}
             </section>
-            {activeTab === 'นิยาย' && (
-                    <div style={{ animation: 'fadeIn 0.5s' }}>
-                        {/* --- ส่วนแสดงผลรายการนิยาย --- */}
+            {(activeTab === 'นิยาย' || activeTab === 'การ์ตูน/มังงะ') && (() => {
+                const isNovel = activeTab === 'นิยาย';
+                const genreOptions = isNovel ? novelCategories : mangaCategories;
+                const displayBooks = isNovel ? filteredNovels : filteredManga;
+                return (
+                    <div style={{ animation: 'fadeIn 0.4s' }}>
+                        {/* ══ Search / Sort / Genre Bar ══ */}
+                        <div style={{
+                            display: 'flex', flexWrap: 'wrap', gap: '10px',
+                            alignItems: 'center', marginBottom: '22px',
+                            padding: '16px 18px',
+                            background: '#fff', borderRadius: '12px',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                        }}>
+                            {/* Search */}
+                            <div style={{ position: 'relative', flex: '1 1 220px', minWidth: '180px' }}>
+                                <i className="fas fa-search" style={{
+                                    position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
+                                    color: '#aaa', fontSize: '14px', pointerEvents: 'none'
+                                }} />
+                                <input
+                                    type="text"
+                                    placeholder="ค้นหาชื่อเรื่อง หรือ ผู้แต่ง..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    style={{
+                                        width: '100%', padding: '9px 12px 9px 36px',
+                                        border: '1px solid #e0e0e0', borderRadius: '8px',
+                                        fontSize: '14px', boxSizing: 'border-box',
+                                        outline: 'none', fontFamily: 'Sarabun',
+                                        transition: 'border 0.2s',
+                                    }}
+                                    onFocus={e => e.target.style.borderColor = '#b5651d'}
+                                    onBlur={e => e.target.style.borderColor = '#e0e0e0'}
+                                />
+                            </div>
+
+                            {/* Genre filter */}
+                            <div style={{ position: 'relative', flex: '1 1 170px', minWidth: '150px' }}>
+                                <i className="fas fa-tag" style={{
+                                    position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
+                                    color: '#aaa', fontSize: '13px', pointerEvents: 'none'
+                                }} />
+                                <select
+                                    value={selectedGenre}
+                                    onChange={e => setSelectedGenre(e.target.value)}
+                                    style={{
+                                        width: '100%', padding: '9px 12px 9px 34px',
+                                        border: '1px solid #e0e0e0', borderRadius: '8px',
+                                        fontSize: '14px', cursor: 'pointer',
+                                        background: '#fff', appearance: 'none',
+                                        fontFamily: 'Sarabun', outline: 'none',
+                                        transition: 'border 0.2s',
+                                    }}
+                                    onFocus={e => e.target.style.borderColor = '#b5651d'}
+                                    onBlur={e => e.target.style.borderColor = '#e0e0e0'}
+                                >
+                                    <option value="all">🏷 ทุกแนว</option>
+                                    {genreOptions.map(g => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </select>
+                                <i className="fas fa-chevron-down" style={{
+                                    position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                                    color: '#aaa', fontSize: '11px', pointerEvents: 'none'
+                                }} />
+                            </div>
+
+                            {/* Sort */}
+                            <div style={{ position: 'relative', flex: '1 1 190px', minWidth: '170px' }}>
+                                <i className="fas fa-sort-amount-down" style={{
+                                    position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
+                                    color: '#aaa', fontSize: '13px', pointerEvents: 'none'
+                                }} />
+                                <select
+                                    value={sortBy}
+                                    onChange={e => setSortBy(e.target.value)}
+                                    style={{
+                                        width: '100%', padding: '9px 12px 9px 34px',
+                                        border: '1px solid #e0e0e0', borderRadius: '8px',
+                                        fontSize: '14px', cursor: 'pointer',
+                                        background: '#fff', appearance: 'none',
+                                        fontFamily: 'Sarabun', outline: 'none',
+                                        transition: 'border 0.2s',
+                                    }}
+                                    onFocus={e => e.target.style.borderColor = '#b5651d'}
+                                    onBlur={e => e.target.style.borderColor = '#e0e0e0'}
+                                >
+                                    <option value="latest">🕐 ล่าสุด</option>
+                                    <option value="likesHigh">❤️ ยอดนิยมมากสุด</option>
+                                    <option value="likesLow">🤍 ยอดนิยมน้อยสุด</option>
+                                    <option value="priceLow">💰 ราคาต่ำ → สูง</option>
+                                    <option value="priceHigh">💎 ราคาสูง → ต่ำ</option>
+                                    <option value="episodesHigh">📚 ตอนมากสุด</option>
+                                    <option value="episodesLow">📖 ตอนน้อยสุด</option>
+                                    <option value="authorAZ">✍️ ผู้แต่ง ก-ฮ</option>
+                                    <option value="authorZA">✍️ ผู้แต่ง ฮ-ก</option>
+                                </select>
+                                <i className="fas fa-chevron-down" style={{
+                                    position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                                    color: '#aaa', fontSize: '11px', pointerEvents: 'none'
+                                }} />
+                            </div>
+
+                            {/* Result count + clear */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#888', flexShrink: 0 }}>
+                                <span>พบ <strong style={{ color: '#b5651d' }}>{displayBooks.length}</strong> เรื่อง</span>
+                                {(searchQuery || selectedGenre !== 'all' || sortBy !== 'latest') && (
+                                    <button
+                                        onClick={() => { setSearchQuery(''); setSelectedGenre('all'); setSortBy('latest'); }}
+                                        style={{
+                                            border: '1px solid #e0e0e0', borderRadius: '6px',
+                                            background: '#fafafa', padding: '5px 10px',
+                                            fontSize: '12px', cursor: 'pointer', color: '#888',
+                                            transition: 'all 0.2s',
+                                        }}
+                                        onMouseOver={e => { e.currentTarget.style.background = '#fff0f0'; e.currentTarget.style.color = '#ff4e63'; e.currentTarget.style.borderColor = '#ff4e63'; }}
+                                        onMouseOut={e => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.color = '#888'; e.currentTarget.style.borderColor = '#e0e0e0'; }}
+                                    >
+                                        ✕ ล้างตัวกรอง
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* ══ Grid หนังสือ ══ */}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 160px)', gap: '20px', justifyContent: 'start' }}>
-                            {/* ใช้ filteredNovels ที่เราเขียน Logic กรองไว้แล้วมาวน Loop */}
-                            {filteredNovels.length > 0 ? (
-                                filteredNovels.map(book => (
-                                    <BookCard 
+                            {displayBooks.length > 0 ? (
+                                displayBooks.map(book => (
+                                    <BookCard
                                         key={book.id}
                                         book={book}
                                         isLoggedIn={isLoggedIn}
@@ -945,56 +1085,16 @@ const novelBooks = books
                                     />
                                 ))
                             ) : (
-                                <div style={{ gridColumn: 'span 7', textAlign: 'center', padding: '50px', color: '#999' }}>
-                                    <i className="fas fa-search" style={{ fontSize: '30px', marginBottom: '10px' }}></i>
-                                    <p>ไม่พบผลลัพธ์ที่ตรงกับคำค้นหาของคุณ</p>
+                                <div style={{ gridColumn: 'span 7', textAlign: 'center', padding: '60px 20px', color: '#bbb' }}>
+                                    <i className="fas fa-search" style={{ fontSize: '36px', marginBottom: '14px', display: 'block' }} />
+                                    <p style={{ margin: 0, fontSize: '15px' }}>ไม่พบผลลัพธ์ที่ตรงกับเงื่อนไขที่เลือก</p>
+                                    <p style={{ margin: '8px 0 0 0', fontSize: '13px', color: '#ccc' }}>ลองเปลี่ยนคำค้น หรือปรับตัวกรองดูนะครับ</p>
                                 </div>
                             )}
                         </div>
                     </div>
-                )}
-                {/* --- ส่วนเนื้อหา Tab มังงะ --- */}
-            {activeTab === 'การ์ตูน/มังงะ' && (
-                <>
-                    {/* รายการมังงะ */}
-                    <div style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: 'repeat(auto-fill, 160px)', 
-                        gap: '20px',
-                        rowGap: '30px',
-                        justifyContent: 'start'
-                    }}>
-                        {mangaBooks
-                            .filter(book => book.title.toLowerCase().includes(searchQuery.toLowerCase()))
-                            .sort((a, b) => {
-                                if (sortBy === 'priceHigh') return b.price - a.price;
-                                if (sortBy === 'priceLow') return a.price - b.price;
-                                if (sortBy === 'likesHigh') return (b.likes || 0) - (a.likes || 0);
-                                return b.id - a.id; 
-                            })
-                            .map(book => (
-                                <BookCard 
-                                    key={book.id}
-                                    book={book}
-                                    isLoggedIn={isLoggedIn}
-                                    onView={setViewBook}
-                                    onAddToCart={addToCart}
-                                    isFavorite={favoriteIds.includes(book.id)}
-                                    purchasedIds={purchasedIds} // ส่งตัวนี้เพื่อให้ขึ้น "ซื้อแล้ว"
-                                    handleToggleFavorite={handleToggleFavorite}
-                                />
-                            ))
-                        }
-                    </div>
-
-                    {/* กรณีค้นหาไม่เจอ */}
-                    {mangaBooks.filter(book => book.title.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
-                        <div style={{ textAlign: 'center', padding: '50px', color: '#888' }}>
-                            ไม่พบมังงะที่ค้นหา...
-                        </div>
-                    )}
-                </>
-            )}
+                );
+            })()}
             {activeTab === 'เร็วๆ นี้' && (
                 <div style={{ maxWidth: '700px', margin: '0 auto', animation: 'fadeIn 0.5s' }}>
                     <h3 style={{ marginBottom: '20px', color: '#333' }}>

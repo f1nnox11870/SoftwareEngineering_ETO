@@ -167,7 +167,7 @@ function Modal({ modal, onClose }) {
 }
 
 // ── PasswordField Component ──
-function PasswordField({ label, hint, value, onChange }) {
+function PasswordField({ label, hint, value, onChange, autoComplete }) {
     const [show, setShow] = useState(false);
     return (
         <div className="pw-field-group">
@@ -179,6 +179,7 @@ function PasswordField({ label, hint, value, onChange }) {
                     placeholder={label}
                     value={value}
                     onChange={onChange}
+                    autoComplete={autoComplete || 'new-password'}
                 />
                 <button className="pw-eye" type="button" onClick={() => setShow(v => !v)}>
                     {show ? (
@@ -620,17 +621,20 @@ function SettingProfile() {
                                             label="รหัสผ่านปัจจุบัน"
                                             value={oldPassword}
                                             onChange={e => setOldPassword(e.target.value)}
+    
                                         />
                                         <PasswordField
                                             label="รหัสผ่านใหม่"
                                             hint="รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร"
                                             value={newPassword}
                                             onChange={e => setNewPassword(e.target.value)}
+                                            autoComplete="new-password"
                                         />
                                         <PasswordField
                                             label="ยืนยันรหัสผ่านใหม่"
                                             value={confirmPassword}
                                             onChange={e => setConfirmPassword(e.target.value)}
+                                            autoComplete="new-password"
                                         />
                                     </div>
 

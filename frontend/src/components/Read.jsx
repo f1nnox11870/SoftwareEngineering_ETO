@@ -159,10 +159,13 @@ function Read() {
     };
 
     // ฟังก์ชันเรนเดอร์เนื้อหา (แยกระหว่างนิยายกับมังงะ)
+    const MANGA_CATS = ['มังงะ', 'การ์ตูน', 'การ์ตูนโรแมนติก', 'การ์ตูนแอคชั่น',
+        'การ์ตูนแฟนตาซี', 'การ์ตูนตลก', 'การ์ตูนสยองขวัญ', 'การ์ตูนกีฬา', 'การ์ตูนวาย', 'การ์ตูนยูริ'];
+
     const renderContent = () => {
         if (!currentEpisode) return null;
 
-        if (book.category === "มังงะ") {
+        if (MANGA_CATS.includes(book.category)) {
             try {
                 const images = JSON.parse(currentEpisode.content);
                 return (
@@ -199,7 +202,7 @@ function Read() {
 
             {/* 🔴 โหมดกำลังอ่านเนื้อหา (Reading View) */}
             {currentEpisode ? (
-                <div style={{ maxWidth: book.category === 'มังงะ' ? '1200px' : '900px', margin: '0 auto', background: book.category === 'มังงะ' ? '#111' : '#fff', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', borderRadius: '12px', overflow: 'hidden', marginTop: '20px' }}>
+                <div style={{ maxWidth: MANGA_CATS.includes(book.category) ? '1200px' : '900px', margin: '0 auto', background: MANGA_CATS.includes(book.category) ? '#111' : '#fff', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', borderRadius: '12px', overflow: 'hidden', marginTop: '20px' }}>
                     
                     {/* แถบด้านบน */}
                     <div style={{ padding: '15px 25px', background: '#fff', borderBottom: '1px solid #eaeaea', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 }}>

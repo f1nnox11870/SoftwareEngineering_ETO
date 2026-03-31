@@ -9,6 +9,11 @@ const MAIN_CATEGORIES = [
     { label: 'การ์ตูน(มังงะ)', key: 'manga', tab: 'การ์ตูน/มังงะ'  },
 ];
 
+const NOVEL_GENRES = ['นิยาย', 'นิยายรักโรแมนติก', 'นิยายวาย', 'นิยายแฟนตาซี', 'นิยายสืบสวน',
+    'นิยายกำลังภายใน', 'ไลท์โนเวล', 'วรรณกรรมทั่วไป', 'นิยายยูริ', 'กวีนิพนธ์', 'แฟนเฟิค'];
+const MANGA_GENRES = ['มังงะ', 'การ์ตูน', 'การ์ตูนโรแมนติก', 'การ์ตูนแอคชั่น',
+    'การ์ตูนแฟนตาซี', 'การ์ตูนตลก', 'การ์ตูนสยองขวัญ', 'การ์ตูนกีฬา', 'การ์ตูนวาย', 'การ์ตูนยูริ'];
+
 function formatTime(dateStr) {
     if (!dateStr) return '';
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -39,6 +44,7 @@ function Admin() {
   const [description, setDescription] = useState("");
   const [author, setAuthor] = useState("");
   const [category, setCategory] = useState("");
+  const [genre, setGenre] = useState("");
   const [price, setPrice] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [selectedBookId, setSelectedBookId] = useState("");
@@ -48,7 +54,7 @@ function Admin() {
   const [epContent, setEpContent] = useState("");
   const [epImages, setEpImages] = useState([]);
   const selectedBook = books.find(b => b.id.toString() === selectedBookId.toString());
-  const isManga = selectedBook?.category === "มังงะ";
+  const isManga = selectedBook && MANGA_GENRES.includes(selectedBook.category);
   const [banners, setBanners] = useState([]);
   const [newBannerImage, setNewBannerImage] = useState(null);
 
@@ -210,9 +216,10 @@ function Admin() {
     const token = localStorage.getItem("token");
     if (!image) return alert("กรุณาอัปโหลดรูปหน้าปกด้วยครับ");
     if (!category) return alert("กรุณาเลือกหมวดหมู่ด้วยครับ");
+    if (!genre) return alert("กรุณาเลือกแนวหนังสือด้วยครับ");
     try {
-      await axios.post("http://localhost:3001/admin/add-book", { title, author, category, description, image, price: Number(price) }, { headers: { Authorization: `Bearer ${token}` } });
-      alert("เพิ่มหนังสือสำเร็จ!"); setTitle(""); setImage(""); setAuthor(""); setCategory(""); setDescription(""); setPrice(""); fetchBooks();
+      await axios.post("http://localhost:3001/admin/add-book", { title, author, category: genre, description, image, price: Number(price) }, { headers: { Authorization: `Bearer ${token}` } });
+      alert("เพิ่มหนังสือสำเร็จ!"); setTitle(""); setImage(""); setAuthor(""); setCategory(""); setGenre(""); setDescription(""); setPrice(""); fetchBooks();
     } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาด"); }
   };
   const handleAddEpisode = async (e) => {
@@ -284,12 +291,50 @@ function Admin() {
             </div>
             <label>ผู้แต่ง</label>
             <input style={inputStyle} type="text" value={author} onChange={(e) => setAuthor(e.target.value)} />
-            <label>หมวดหมู่</label>
-            <select style={{ ...inputStyle, cursor: "pointer" }} value={category} onChange={(e) => setCategory(e.target.value)} required>
-              <option value="" disabled>-- กรุณาเลือกหมวดหมู่ --</option>
-              <option value="นิยาย">นิยาย</option>
-              <option value="มังงะ">มังงะ / การ์ตูน</option>
+            <label>หมวดหมู่หลัก</label>
+            <select style={{ ...inputStyle, cursor: "pointer" }} value={category} onChange={(e) => { setCategory(e.target.value); setGenre(""); }} required>
+              <option value="" disabled>-- กรุณาเลือกประเภทหลัก --</option>
+              <option value="novel">📖 นิยาย</option>
+              <option value="manga">🎨 มังงะ / การ์ตูน</option>
             </select>
+
+            {/* ── Genre (แนวหนังสือ) แสดงเมื่อเลือก category แล้ว ── */}
+            {category && (
+              <>
+                <label>แนวหนังสือ <span style={{ color: '#ff4e63' }}>*</span></label>
+                <div style={{
+                  display: 'flex', flexWrap: 'wrap', gap: '8px',
+                  marginBottom: '15px', padding: '12px',
+                  border: '1px solid #e0e0e0', borderRadius: '8px',
+                  background: '#fafafa'
+                }}>
+                  {(category === 'novel' ? NOVEL_GENRES : MANGA_GENRES).map(g => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setGenre(g)}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '20px',
+                        border: genre === g ? '2px solid #b5651d' : '1px solid #ddd',
+                        background: genre === g ? '#b5651d' : '#fff',
+                        color: genre === g ? '#fff' : '#555',
+                        fontSize: '13px', cursor: 'pointer',
+                        fontFamily: 'Sarabun', fontWeight: genre === g ? 'bold' : 'normal',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+                {genre && (
+                  <div style={{ marginBottom: '15px', fontSize: '13px', color: '#888' }}>
+                    ✅ เลือกแล้ว: <strong style={{ color: '#b5651d' }}>{genre}</strong>
+                  </div>
+                )}
+              </>
+            )}
             <label>ราคา (บาท)</label>
             <input style={inputStyle} type="number" min="0" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="เช่น 199 หรือเว้นว่าง/ใส่ 0 เพื่อให้อ่านฟรี" />
             <label>คำอธิบาย</label>
