@@ -223,34 +223,6 @@ db.run(`CREATE TABLE IF NOT EXISTS topup_requests (
     else console.log("✅ Table 'topup_requests' is ready.");
 });
 
-// 🔔 admin_notifications — แจ้งเตือน admin เมื่อ user ส่งสลิป
-db.run(`CREATE TABLE IF NOT EXISTS admin_notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL,
-    title TEXT NOT NULL,
-    message TEXT,
-    ref_id INTEGER,
-    is_read INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`, (err) => {
-    if (!err) console.log("✅ Table 'admin_notifications' is ready.");
-});
-
-// 🔔 user_notifications — แจ้งเตือน user เมื่อ admin approve/reject
-db.run(`CREATE TABLE IF NOT EXISTS user_notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    type TEXT NOT NULL,
-    title TEXT NOT NULL,
-    message TEXT,
-    ref_id INTEGER,
-    is_read INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-)`, (err) => {
-    if (!err) console.log("✅ Table 'user_notifications' is ready.");
-});
-
 // สร้าง admin
 const createAdmin = async () => {
     const username = 'admin123';
@@ -428,8 +400,7 @@ app.get('/admin/topups', verifyToken, (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
 
     const sql = `
-        SELECT t.id, t.user_id, u.username, t.package_id, t.coins, t.amount, t.slip_image, t.status,
-               t.created_at || 'Z' as created_at
+        SELECT t.id, t.user_id, u.username, t.package_id, t.coins, t.amount, t.slip_image, t.status, t.created_at
         FROM topup_requests t
         JOIN users u ON t.user_id = u.id
         WHERE t.status = 'pending'
@@ -627,83 +598,22 @@ app.get('/profile', verifyToken, (req, res) => {
 app.put('/admin/topups/:id/approve', verifyToken, (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
     const requestId = req.params.id;
-    const adminId   = req.user.id;
+    const adminId = req.user.id;
 
-    db.get(`SELECT * FROM topup_requests WHERE id = ? AND status = 'pending'`, [requestId], (err, request) => {
+    // ดึงข้อมูลคำขอเพื่อดูว่าต้องให้กี่เหรียญ และให้ใคร
+    db.get(`SELECT user_id, coins FROM topup_requests WHERE id = ? AND status = 'pending'`, [requestId], (err, request) => {
         if (err || !request) return res.status(404).json({ message: "ไม่พบคำขอ หรืออนุมัติไปแล้ว" });
 
-        const totalCoins = request.total_coins || request.coins;
-
-        // 1. อัปเดตสถานะ
-        db.run(
-            `UPDATE topup_requests SET status = 'approved', approved_at = CURRENT_TIMESTAMP, approved_by = ? WHERE id = ?`,
-            [adminId, requestId],
-            function(err) {
-                if (err) return res.status(500).json({ message: "Database error (update)" });
-
-                // 2. บวกเหรียญให้ user
-                db.run(`UPDATE users SET coins = coins + ? WHERE id = ?`, [totalCoins, request.user_id], function(err) {
-                    if (err) return res.status(500).json({ message: "Failed to add coins" });
-
-                    // 3. บันทึก purchase_history
-                    db.run(
-                        `INSERT INTO purchase_history (user_id, title, type, price) VALUES (?, ?, 'topup', 0)`,
-                        [request.user_id, `เติมเหรียญ ${Number(totalCoins).toLocaleString()} เหรียญ (฿${request.amount})`]
-                    );
-
-                    // 4. ส่ง user_notification แจ้ง user
-                    db.run(
-                        `INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES (?, ?, ?, ?, ?)`,
-                        [
-                            request.user_id,
-                            'topup_approved',
-                            `เติมเหรียญสำเร็จ +${Number(totalCoins).toLocaleString()} เหรียญ`,
-                            `ชำระ ฿${request.amount} — รับ ${Number(totalCoins).toLocaleString()} เหรียญแล้ว`,
-                            requestId
-                        ],
-                        function(err2) {
-                            if (err2) console.error("user_notifications insert error:", err2.message);
-                            res.json({ message: "อนุมัติสำเร็จ ผู้ใช้ได้รับเหรียญแล้ว!" });
-                        }
-                    );
-                });
-            }
-        );
-    });
-});
-
-// ── [PUT] admin ปฏิเสธคำขอ (endpoint ที่ AdminTopup.jsx เรียก) ─────────────
-app.put('/admin/topups/:id/reject', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
-    const requestId = req.params.id;
-    const adminId   = req.user.id;
-    const { note }  = req.body;
-
-    db.get(`SELECT * FROM topup_requests WHERE id = ? AND status = 'pending'`, [requestId], (err, request) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        if (!request) return res.status(404).json({ message: "ไม่พบคำขอ หรือถูกดำเนินการแล้ว" });
-
-        const rejectNote = (note && note.trim()) ? note.trim() : 'ปฏิเสธโดยแอดมิน';
-
-        // 1. อัปเดตสถานะ
-        db.run(
-            `UPDATE topup_requests SET status = 'rejected', approved_at = CURRENT_TIMESTAMP, approved_by = ?, note = ? WHERE id = ?`,
-            [adminId, rejectNote, requestId],
-            function(err) {
-                if (err) return res.status(500).json({ message: "Database error (update)" });
-
-                // 2. ส่ง user_notification แจ้ง user
-                db.run(
-                    `INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES (?, ?, ?, ?, ?)`,
-                    [request.user_id, 'topup_rejected', 'คำขอเติมเหรียญถูกปฏิเสธ', rejectNote, requestId],
-                    function(err2) {
-                        if (err2) console.error("user_notifications insert error:", err2.message);
-                        // ส่ง response สำเร็จเสมอ แม้ notification จะ fail
-                        res.json({ message: "ปฏิเสธคำขอแล้ว" });
-                    }
-                );
-            }
-        );
+        db.serialize(() => {
+            // 1. เปลี่ยนสถานะเป็น approved
+            db.run(`UPDATE topup_requests SET status = 'approved', approved_at = CURRENT_TIMESTAMP, approved_by = ? WHERE id = ?`, [adminId, requestId]);
+            
+            // 2. บวกเหรียญให้ User
+            db.run(`UPDATE users SET coins = coins + ? WHERE id = ?`, [request.coins, request.user_id], (err) => {
+                if (err) return res.status(500).json({ message: "Failed to add coins" });
+                res.json({ message: "อนุมัติสำเร็จ ผู้ใช้ได้รับเหรียญแล้ว!" });
+            });
+        });
     });
 });
 app.put('/profile/username', verifyToken, (req, res) => {
@@ -1065,25 +975,9 @@ app.post('/topup/request', verifyToken, uploadSlip.single('slip'), (req, res) =>
             return res.status(500).json({ message: "Database error", error: err.message });
         }
 
-        const newRequestId = this.lastID;
-
-        // 🔔 บันทึกแจ้งเตือนให้ admin ทราบว่ามีคำขอเติมเหรียญใหม่
-        db.get(`SELECT username FROM users WHERE id = ?`, [userId], (err2, userRow) => {
-            const uname = userRow ? userRow.username : `User #${userId}`;
-            db.run(
-                `INSERT INTO admin_notifications (type, title, message, ref_id) VALUES (?, ?, ?, ?)`,
-                [
-                    'topup_pending',
-                    `คำขอเติมเหรียญใหม่`,
-                    `${uname} ส่งสลิปเติมเหรียญ ฿${parseFloat(amount).toLocaleString()} (${parseInt(total_coins).toLocaleString()} เหรียญ) รอการอนุมัติ`,
-                    newRequestId
-                ]
-            );
-        });
-
         res.status(201).json({
             message: "ส่งคำขอเติมเหรียญสำเร็จ! รอการตรวจสอบจากแอดมิน",
-            requestId: newRequestId,
+            requestId: this.lastID,
             status: 'pending'
         });
     });
@@ -1094,10 +988,7 @@ app.get('/topup/my-requests', verifyToken, (req, res) => {
     const userId = req.user.id;
 
     const sql = `
-        SELECT id, package_id, coins, bonus, total_coins, amount, slip_image, status,
-               created_at || 'Z' as created_at,
-               approved_at || 'Z' as approved_at,
-               note
+        SELECT id, package_id, coins, bonus, total_coins, amount, slip_image, status, created_at, approved_at, note
         FROM topup_requests
         WHERE user_id = ?
         ORDER BY created_at DESC
@@ -1130,19 +1021,90 @@ app.get('/admin/topup-requests', verifyToken, (req, res) => {
     });
 });
 
+// ✅ [ADMIN] อนุมัติคำขอเติมเหรียญ → เพิ่มเหรียญให้ user ใน DB จริง
+app.post('/admin/topup-approve/:id', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
+
+    const requestId = req.params.id;
+    const adminId = req.user.id;
+    const { note } = req.body;
+
+    // 1. ดึงข้อมูลคำขอ
+    db.get(`SELECT * FROM topup_requests WHERE id = ? AND status = 'pending'`, [requestId], (err, request) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        if (!request) return res.status(404).json({ message: "ไม่พบคำขอ หรือถูกดำเนินการแล้ว" });
+
+        // 2. เพิ่มเหรียญให้ user
+        db.run(`UPDATE users SET coins = coins + ? WHERE id = ?`, [request.total_coins, request.user_id], function(err) {
+            if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการเพิ่มเหรียญ" });
+
+            // 3. อัปเดตสถานะคำขอ
+            db.run(
+                `UPDATE topup_requests SET status = 'approved', approved_at = CURRENT_TIMESTAMP, approved_by = ?, note = ? WHERE id = ?`,
+                [adminId, note || null, requestId],
+                function(err) {
+                    if (err) return res.status(500).json({ message: "Database error" });
+
+                    // 4. บันทึกประวัติ
+                    const title = `เติมเหรียญ ${request.total_coins.toLocaleString()} เหรียญ (฿${request.amount})`;
+                    db.run(
+                        `INSERT INTO purchase_history (user_id, title, type, price) VALUES (?, ?, 'topup', ?)`,
+                        [request.user_id, title, 0],
+                        () => {}
+                    );
+
+                    // 5. ดึงเหรียญปัจจุบันของ user
+                    db.get(`SELECT coins FROM users WHERE id = ?`, [request.user_id], (err, user) => {
+                        res.json({
+                            message: `อนุมัติสำเร็จ! เพิ่ม ${request.total_coins} เหรียญให้ผู้ใช้แล้ว`,
+                            newCoins: user ? user.coins : null
+                        });
+                    });
+                }
+            );
+        });
+    });
+});
 // ==========================================
 // ❤️ API สำหรับกดหัวใจ (เพิ่ม/ลบ ยอด likes)
 // ==========================================
 app.post('/toggle-like', (req, res) => {
     const { bookId, isLiked } = req.body;
+    
+    // ถ้า isLiked เป็น true ให้บวก 1 (+1) ถ้าเป็น false ให้ลบ 1 (-1)
     const operator = isLiked ? '+ 1' : '- 1';
-    db.run(`UPDATE books SET likes = likes ${operator} WHERE id = ?`, [bookId], function(err) {
-        if (err) return res.status(500).json({ success: false, message: "Database error" });
-        db.get(`SELECT likes FROM books WHERE id = ?`, [bookId], (err, row) => {
-            if (err) return res.status(500).json({ success: false });
-            res.json({ success: true, likes: row ? row.likes : 0 });
-        });
-    });
+    
+    db.run(
+        `UPDATE books SET likes = likes ${operator} WHERE id = ?`,
+        [bookId],
+        function(err) {
+            if (err) return res.status(500).json({ success: false, message: "Database error" });
+            
+            // ดึงค่ายอดไลก์ล่าสุดส่งกลับไปอัปเดตหน้าจอ
+            db.get(`SELECT likes FROM books WHERE id = ?`, [bookId], (err, row) => {
+                if (err) return res.status(500).json({ success: false });
+                res.json({ success: true, likes: row ? row.likes : 0 });
+            });
+        }
+    );
+});
+// ❌ [ADMIN] ปฏิเสธคำขอเติมเหรียญ
+app.post('/admin/topup-reject/:id', verifyToken, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
+
+    const requestId = req.params.id;
+    const adminId = req.user.id;
+    const { note } = req.body;
+
+    db.run(
+        `UPDATE topup_requests SET status = 'rejected', approved_at = CURRENT_TIMESTAMP, approved_by = ?, note = ? WHERE id = ? AND status = 'pending'`,
+        [adminId, note || 'ปฏิเสธโดยแอดมิน', requestId],
+        function(err) {
+            if (err) return res.status(500).json({ message: "Database error" });
+            if (this.changes === 0) return res.status(404).json({ message: "ไม่พบคำขอ หรือถูกดำเนินการแล้ว" });
+            res.json({ message: "ปฏิเสธคำขอแล้ว" });
+        }
+    );
 });
 
 const promptpay = require('promptpay-qr');
@@ -1516,74 +1478,6 @@ app.post('/notifications/new-chapters/seen', verifyToken, (req, res) => {
             res.json({ message: 'บันทึกสถานะแจ้งเตือนเรียบร้อย', marked: episodeIds.length });
         }
     );
-});
-
-// ── [GET] user ดึงการแจ้งเตือนของตัวเอง (topup approved/rejected จาก admin) ──
-app.get('/user/notifications', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    db.all(
-        `SELECT *, created_at || 'Z' as created_at FROM user_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
-        [userId],
-        (err, rows) => {
-            if (err) return res.status(500).json({ message: "Database error" });
-            res.json(rows);
-        }
-    );
-});
-
-// ── [PUT] user mark อ่านแล้วทั้งหมด ──────────────────────────────────────────
-app.put('/user/notifications/read-all', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    db.run(`UPDATE user_notifications SET is_read = 1 WHERE user_id = ?`, [userId], (err) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json({ message: "อ่านทั้งหมดแล้ว" });
-    });
-});
-
-// ── [PUT] user mark อ่านแล้ว 1 รายการ ────────────────────────────────────────
-app.put('/user/notifications/:id/read', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    db.run(
-        `UPDATE user_notifications SET is_read = 1 WHERE id = ? AND user_id = ?`,
-        [req.params.id, userId],
-        (err) => {
-            if (err) return res.status(500).json({ message: "Database error" });
-            res.json({ message: "อ่านแล้ว" });
-        }
-    );
-});
-
-// ── [GET] admin ดึงการแจ้งเตือนที่รอ ──────────────────────────────────────────
-app.get('/admin/notifications', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
-
-    db.all(
-        `SELECT *, created_at || 'Z' as created_at FROM admin_notifications ORDER BY created_at DESC LIMIT 50`,
-        [],
-        (err, rows) => {
-            if (err) return res.status(500).json({ message: "Database error" });
-            res.json(rows);
-        }
-    );
-});
-
-// ── [PUT] admin mark การแจ้งเตือนว่าอ่านแล้ว ──────────────────────────────────
-app.put('/admin/notifications/read-all', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
-
-    db.run(`UPDATE admin_notifications SET is_read = 1`, [], (err) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json({ message: "อ่านทั้งหมดแล้ว" });
-    });
-});
-
-app.put('/admin/notifications/:id/read', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
-
-    db.run(`UPDATE admin_notifications SET is_read = 1 WHERE id = ?`, [req.params.id], (err) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json({ message: "อ่านแล้ว" });
-    });
 });
 
 // ================= START SERVER =================

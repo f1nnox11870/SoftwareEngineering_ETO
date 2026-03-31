@@ -37,7 +37,7 @@
     font-weight: 700;
     margin-bottom: 24px;
     color: #222;
-    border-bottom: 3px solid #b5651d;
+    border-bottom: 3px solid #ff4e63;
     display: inline-block;
     padding-bottom: 5px;
 }
@@ -114,7 +114,7 @@
 }
 
 .btn-remove-item:hover {
-    background: #b5651d;
+    background: #ff4e63;
     color: #fff;
 }
 
@@ -166,7 +166,7 @@
     width: 100%;
     margin-top: 20px;
     padding: 12px;
-    background: #b5651d;
+    background: #ff4e63;
     color: #fff;
     border: none;
     border-radius: 8px;
@@ -177,7 +177,7 @@
 }
 
 .btn-checkout:hover {
-    background: #b5651d;
+    background: #e63e50;
 }
 
 .empty-cart {
@@ -229,152 +229,4 @@
     border-radius: 8px;
     font-size: 13px;
     border: 1px dashed #ff4e63;
-}
-
-
-/* ══════════════════════════════════════════
-   🎨 MODAL STYLES
-══════════════════════════════════════════ */
-
-/* Overlay พื้นหลังมืด */
-.modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    padding: 20px;
-    animation: modalFadeIn 0.2s ease;
-}
-
-@keyframes modalFadeIn {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-}
-
-/* กล่อง Modal หลัก */
-.modal-box {
-    background: #fff;
-    border-radius: 20px;
-    padding: 36px 32px 28px;
-    width: 100%;
-    max-width: 400px;
-    text-align: center;
-    box-shadow:
-        0 20px 60px rgba(0, 0, 0, 0.18),
-        0 4px 16px rgba(0, 0, 0, 0.08);
-    animation: modalSlideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-    position: relative;
-}
-
-@keyframes modalSlideUp {
-    from {
-        opacity: 0;
-        transform: translateY(24px) scale(0.96);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
-}
-
-/* ไอคอนวงกลมด้านบน */
-.modal-icon-wrap {
-    width: 68px;
-    height: 68px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 18px;
-    font-size: 28px;
-    transition: transform 0.2s;
-}
-
-.modal-box:hover .modal-icon-wrap {
-    transform: scale(1.07);
-}
-
-/* หัวข้อ Modal */
-.modal-title {
-    font-size: 20px;
-    font-weight: 700;
-    color: #1a1a1a;
-    margin: 0 0 10px;
-    line-height: 1.3;
-}
-
-/* ข้อความรายละเอียด */
-.modal-message {
-    font-size: 14.5px;
-    color: #666;
-    line-height: 1.65;
-    margin: 0 0 24px;
-    white-space: pre-line;
-}
-
-/* กลุ่มปุ่ม */
-.modal-actions {
-    display: flex;
-    gap: 10px;
-}
-
-.modal-actions-single {
-    justify-content: center;
-}
-
-/* ปุ่มทั่วไป */
-.modal-btn {
-    flex: 1;
-    padding: 12px 16px;
-    border: none;
-    border-radius: 10px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.18s ease;
-    letter-spacing: 0.2px;
-}
-
-/* ปุ่มยกเลิก */
-.modal-btn-cancel {
-    background: #f3f4f6;
-    color: #555;
-}
-
-.modal-btn-cancel:hover {
-    background: #e5e7eb;
-    color: #333;
-    transform: translateY(-1px);
-}
-
-.modal-btn-cancel:active {
-    transform: translateY(0);
-}
-
-/* ปุ่มยืนยัน */
-.modal-btn-confirm {
-    background: #b5651d;
-    color: #fff;
-   
-}
-
-.modal-btn-confirm:hover {
-    background: #b5651d;
-    
-    transform: translateY(-1px);
-}
-
-.modal-btn-confirm:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 8px rgba(255, 78, 99, 0.3);
-}
-
-/* ปุ่ม OK แบบเดี่ยว (Alert) — กว้างครึ่ง */
-.modal-actions-single .modal-btn-confirm {
-    flex: 0 0 140px;
 }

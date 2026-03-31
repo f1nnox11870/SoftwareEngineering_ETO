@@ -253,7 +253,7 @@ function Favorites() {
 
             {/* ══ MAIN CONTENT ══ */}
             <div className="cart-container">
-                <h2 className="cart-title" style={{ borderColor: '#b5651d' }}>
+                <h2 className="cart-title" style={{ borderColor: '#ff4e63' }}>
                     <i className="fas fa-heart" style={{ marginRight: 8, color: '#ff4e63' }}></i>
                     หนังสือเล่มโปรดของคุณ
                     {!loading && <span style={{ fontSize: 15, fontWeight: 400, color: '#888', marginLeft: 8 }}>({favorites.length} เล่ม)</span>}
