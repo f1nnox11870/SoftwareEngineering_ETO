@@ -260,7 +260,7 @@ const handleToggleFavorite = async (e, book) => {
     
     const token = localStorage.getItem('token');
     if (!token) {
-        showModal("warn", "กรุณาเข้าสู่ระบบก่อนกดถูกใจครับ", "🔒 ต้องเข้าสู่ระบบ");
+        showModal("warn", "กรุณาเข้าสู่ระบบก่อนกดถูกใจครับ", " ต้องเข้าสู่ระบบ");
         return;
     }
 
@@ -384,7 +384,7 @@ const handleToggleFavorite = async (e, book) => {
             
             // 🔻 เพิ่มการดักจับ Error 403 ตรงนี้ 🔻
             if (error.response && error.response.status === 403) {
-                showModal("error", "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่อีกครั้งครับ", "⚠️ เซสชันหมดอายุ");
+                showModal("error", "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่อีกครั้งครับ", " เซสชันหมดอายุ");
                 localStorage.clear(); // ล้าง Token เก่าทิ้ง
                 setIsLoggedIn(false);
                 window.location.reload(); // รีเฟรชหน้าเว็บ 1 รอบ
@@ -395,7 +395,7 @@ const handleToggleFavorite = async (e, book) => {
     const addToCart = async (bookId) => {
     const token = localStorage.getItem('token');
     if (!token) {
-        showModal("warn", "กรุณาเข้าสู่ระบบก่อนเพิ่มสินค้าลงตะกร้าครับ", "🔒 ต้องเข้าสู่ระบบ");
+        showModal("warn", "กรุณาเข้าสู่ระบบก่อนเพิ่มสินค้าลงตะกร้าครับ", " ต้องเข้าสู่ระบบ");
         return;
     }
 
@@ -409,7 +409,7 @@ const handleToggleFavorite = async (e, book) => {
         setCartCount(prev => prev + 1); 
         
         setViewBook(null); // ปิดหน้าต่าง
-        showModal("success", "เพิ่มหนังสือลงตะกร้าเรียบร้อยแล้ว!", "🛒 สำเร็จ");
+        showModal("success", "เพิ่มหนังสือลงตะกร้าเรียบร้อยแล้ว!", " สำเร็จ");
 
     } catch (err) {
         // ให้มัน log ออกมาใน Console ด้วย จะได้ตามสืบง่าย

@@ -29,6 +29,81 @@ function saveReadId(id) {
     try { const s = loadReadIds(); s.add(id); localStorage.setItem('notif_read_ids', JSON.stringify([...s].slice(-200))); } catch {}
 }
 
+/* ══════════════════════════════════════════
+   🎨 MODAL COMPONENTS
+══════════════════════════════════════════ */
+
+/** Generic Confirm Modal */
+function ConfirmModal({ isOpen, onClose, onConfirm, title, message, confirmLabel = 'ยืนยัน', cancelLabel = 'ยกเลิก', type = 'default' }) {
+    useEffect(() => {
+        if (isOpen) document.body.style.overflow = 'hidden';
+        else document.body.style.overflow = '';
+        return () => { document.body.style.overflow = ''; };
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    const iconMap = {
+        delete:   { icon: 'fas fa-trash-alt',        color: '#ff4e63', bg: '#fff1f3' },
+        checkout: { icon: 'fas fa-shopping-bag',      color: '#ff4e63', bg: '#fff1f3' },
+        default:  { icon: 'fas fa-question-circle',   color: '#ff4e63', bg: '#fff1f3' },
+    };
+    const { icon, color, bg } = iconMap[type] || iconMap.default;
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-box" onClick={e => e.stopPropagation()}>
+                <div className="modal-icon-wrap" style={{ background: bg }}>
+                    <i className={icon} style={{ color }} />
+                </div>
+                <h3 className="modal-title">{title}</h3>
+                <p className="modal-message">{message}</p>
+                <div className="modal-actions">
+                    <button className="modal-btn modal-btn-cancel" onClick={onClose}>{cancelLabel}</button>
+                    <button className="modal-btn modal-btn-confirm" onClick={onConfirm}>{confirmLabel}</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/** Generic Alert/Result Modal */
+function AlertModal({ isOpen, onClose, title, message, type = 'success' }) {
+    useEffect(() => {
+        if (isOpen) document.body.style.overflow = 'hidden';
+        else document.body.style.overflow = '';
+        return () => { document.body.style.overflow = ''; };
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    const iconMap = {
+        success: { icon: 'fas fa-check-circle', color: '#22c55e', bg: '#f0fdf4' },
+        error:   { icon: 'fas fa-times-circle',  color: '#ff4e63', bg: '#fff1f3' },
+        warning: { icon: 'fas fa-exclamation-triangle', color: '#f59e0b', bg: '#fffbeb' },
+        info:    { icon: 'fas fa-info-circle',   color: '#3b82f6', bg: '#eff6ff' },
+    };
+    const { icon, color, bg } = iconMap[type] || iconMap.success;
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-box" onClick={e => e.stopPropagation()}>
+                <div className="modal-icon-wrap" style={{ background: bg }}>
+                    <i className={icon} style={{ color }} />
+                </div>
+                <h3 className="modal-title">{title}</h3>
+                <p className="modal-message">{message}</p>
+                <div className="modal-actions modal-actions-single">
+                    <button className="modal-btn modal-btn-confirm" onClick={onClose}>ตกลง</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ══════════════════════════════════════════
+   🛒 CART COMPONENT
+══════════════════════════════════════════ */
 function Cart() {
     const navigate = useNavigate();
     const [cartItems, setCartItems]   = useState([]);
@@ -47,17 +122,25 @@ function Cart() {
     const [notifOpen, setNotifOpen]   = useState(false);
     const [notifications, setNotifications] = useState([]);
 
+    // ── Modal states ──
+    const [removeModal, setRemoveModal]     = useState({ open: false, itemId: null, title: '' });
+    const [checkoutModal, setCheckoutModal] = useState({ open: false });
+    const [alertModal, setAlertModal]       = useState({ open: false, title: '', message: '', type: 'success', onClose: null });
+
     const megaRef    = useRef(null);
     const profileRef = useRef(null);
     const notifRef   = useRef(null);
     const coinInterval = useRef(null);
+
+    const showAlert = (title, message, type = 'success', callback = null) => {
+        setAlertModal({ open: true, title, message, type, onClose: callback });
+    };
 
     const fetchCart = async () => {
         const token = localStorage.getItem('token');
         if (!token) return;
         try {
             const res = await axios.get('http://localhost:3001/cart', { headers: { Authorization: `Bearer ${token}` } });
-            console.log("ข้อมูลในตะกร้า:", res.data);
             setCartItems(res.data);
             setCartCount(res.data.length);
         } catch (err) { console.error("Fetch cart error", err); }
@@ -147,13 +230,21 @@ function Cart() {
         if (notif?.tag === 'new_chapter' && notif.book_id) { setNotifOpen(false); navigate(`/read/${notif.book_id}`); }
     };
 
-    const removeItem = async (cartItemId) => {
-        if (!window.confirm("คุณต้องการลบหนังสือเล่มนี้ใช่หรือไม่?")) return;
+    // ── ลบสินค้า (ใช้ Modal แทน window.confirm) ──
+    const removeItem = (cartItemId, itemTitle) => {
+        setRemoveModal({ open: true, itemId: cartItemId, title: itemTitle });
+    };
+
+    const confirmRemove = async () => {
+        const { itemId } = removeModal;
+        setRemoveModal({ open: false, itemId: null, title: '' });
         const token = localStorage.getItem('token');
         try {
-            await axios.delete(`http://localhost:3001/cart/${cartItemId}`, { headers: { Authorization: `Bearer ${token}` } });
+            await axios.delete(`http://localhost:3001/cart/${itemId}`, { headers: { Authorization: `Bearer ${token}` } });
             fetchCart();
-        } catch (err) { alert("ไม่สามารถลบสินค้าได้"); }
+        } catch (err) {
+            showAlert('เกิดข้อผิดพลาด', 'ไม่สามารถลบสินค้าได้ กรุณาลองใหม่อีกครั้ง', 'error');
+        }
     };
 
     const handleLogout = () => {
@@ -162,18 +253,32 @@ function Cart() {
         navigate('/');
     };
 
-    const handleCheckout = async () => {
-        const token = localStorage.getItem('token');
+    // ── ชำระเงิน (ใช้ Modal แทน window.confirm & alert) ──
+    const handleCheckout = () => {
         if (coins < totalPrice) {
-            alert(`เหรียญไม่พอ! คุณมี ${coins} แต่ต้องใช้ ${totalPrice} 🪙\nกรุณาไปเติมเหรียญก่อนครับ`);
-            navigate('/topup'); return;
+            showAlert(
+                'เหรียญไม่เพียงพอ',
+                `คุณมี ${coins?.toLocaleString()} เหรียญ แต่ต้องใช้ ${totalPrice.toLocaleString()} เหรียญ\nกรุณาเติมเหรียญก่อนนะครับ`,
+                'warning',
+                () => navigate('/topup')
+            );
+            return;
         }
-        if (!window.confirm(`ยืนยันการชำระเงินจำนวน ${totalPrice.toLocaleString()} 🪙 ใช่หรือไม่?`)) return;
+        setCheckoutModal({ open: true });
+    };
+
+    const confirmCheckout = async () => {
+        setCheckoutModal({ open: false });
+        const token = localStorage.getItem('token');
         try {
             const res = await axios.post('http://localhost:3001/cart/checkout', {}, { headers: { Authorization: `Bearer ${token}` } });
-            alert(res.data.message);
-            setCoins(res.data.remainingCoins); setCartItems([]); setCartCount(0);
-        } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาดในการชำระเงิน"); }
+            setCoins(res.data.remainingCoins);
+            setCartItems([]);
+            setCartCount(0);
+            showAlert('ชำระเงินสำเร็จ! 🎉', res.data.message, 'success');
+        } catch (err) {
+            showAlert('เกิดข้อผิดพลาด', err.response?.data?.message || 'เกิดข้อผิดพลาดในการชำระเงิน', 'error');
+        }
     };
 
     const totalPrice = cartItems.reduce((sum, item) => sum + (item.price || 0), 0);
@@ -182,7 +287,46 @@ function Cart() {
         <div className="home-page shelf-page">
             <Navbar/>
 
-            {/* ══ HERO (เหมือน Topup) ══ */}
+            {/* ══ MODALS ══ */}
+
+            {/* Modal ยืนยันลบ */}
+            <ConfirmModal
+                isOpen={removeModal.open}
+                onClose={() => setRemoveModal({ open: false, itemId: null, title: '' })}
+                onConfirm={confirmRemove}
+                title="ลบออกจากตะกร้า?"
+                message={`คุณต้องการลบ "${removeModal.title}" ออกจากตะกร้าสินค้าใช่หรือไม่?`}
+                confirmLabel="ลบเลย"
+                cancelLabel="ยกเลิก"
+                type="delete"
+            />
+
+            {/* Modal ยืนยันชำระเงิน */}
+            <ConfirmModal
+                isOpen={checkoutModal.open}
+                onClose={() => setCheckoutModal({ open: false })}
+                onConfirm={confirmCheckout}
+                title="ยืนยันการชำระเงิน"
+                message={`ชำระเงิน ${totalPrice.toLocaleString()} เหรียญ เพื่อซื้อหนังสือทั้งหมด ${cartItems.length} เล่ม ใช่หรือไม่?`}
+                confirmLabel="ชำระเงินเลย"
+                cancelLabel="ยกเลิก"
+                type="checkout"
+            />
+
+            {/* Modal แจ้งผลลัพธ์ */}
+            <AlertModal
+                isOpen={alertModal.open}
+                onClose={() => {
+                    const cb = alertModal.onClose;
+                    setAlertModal({ open: false, title: '', message: '', type: 'success', onClose: null });
+                    if (cb) cb();
+                }}
+                title={alertModal.title}
+                message={alertModal.message}
+                type={alertModal.type}
+            />
+
+            {/* ══ HERO ══ */}
             <div className="topup-hero">
                 <div className="topup-page-inner">
                     <div className="topup-breadcrumb">
@@ -193,7 +337,7 @@ function Cart() {
                 </div>
             </div>
 
-            {/* ══ MAIN CONTENT (เดิม ไม่แตะ) ══ */}
+            {/* ══ MAIN CONTENT ══ */}
             <div className="cart-container">
                 <h2 className="cart-title">ตะกร้าสินค้าของฉัน ({cartItems.length} รายการ)</h2>
                 {cartItems.length === 0 ? (
@@ -214,7 +358,7 @@ function Cart() {
                                         <p>ผู้เขียน: {item.author}</p>
                                         <p className="cart-item-price">{item.price.toLocaleString()} บาท</p>
                                     </div>
-                                    <button className="btn-remove-item" onClick={() => removeItem(item.cart_item_id)}>
+                                    <button className="btn-remove-item" onClick={() => removeItem(item.cart_item_id, item.title)}>
                                         <i className="fas fa-trash"></i>
                                     </button>
                                 </div>
@@ -224,12 +368,12 @@ function Cart() {
                             <h3>สรุปยอดชำระ</h3>
                             <div className="summary-row">
                                 <span>ราคาสินค้า</span>
-                                <span>{totalPrice.toLocaleString()} 🪙</span>
+                                <span>{totalPrice.toLocaleString()} เหรียญ</span>
                             </div>
                             <div className="summary-coins-check" style={{ marginTop: '10px', padding: '10px', background: '#fff8f8', borderRadius: '8px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                                     <span>เหรียญของคุณ:</span>
-                                    <span style={{ fontWeight: 'bold' }}>{coins?.toLocaleString()} 🪙</span>
+                                    <span style={{ fontWeight: 'bold' }}>{coins?.toLocaleString()} เหรียญ</span>
                                 </div>
                                 {coins < totalPrice && (
                                     <div style={{ marginTop: '10px', textAlign: 'center' }}>
@@ -248,7 +392,7 @@ function Cart() {
                             <hr className="divider" />
                             <div className="summary-total">
                                 <span>ยอดสุทธิ</span>
-                                <span>{totalPrice.toLocaleString()} 🪙</span>
+                                <span>{totalPrice.toLocaleString()} เหรียญ</span>
                             </div>
                             <button className="btn-checkout" onClick={handleCheckout}
                                 disabled={coins < totalPrice} style={{ opacity: coins < totalPrice ? 0.6 : 1 }}>
