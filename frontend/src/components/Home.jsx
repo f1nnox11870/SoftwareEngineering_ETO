@@ -7,7 +7,7 @@ import Register from './Register';
 import Navbar from './navbar';
 
 
-const TABS = ['แนะนำ', 'นิยาย', 'การ์ตูน/มังงะ','เร็วๆ นี้'];
+const TABS = ['แนะนำ', 'นิยาย', 'การ์ตูน/มังงะ'];
 
 // หมวดใหญ่ (แสดงใน mega-menu) — subcategory จะดึงจาก DB จริง
 const MAIN_CATEGORIES = [

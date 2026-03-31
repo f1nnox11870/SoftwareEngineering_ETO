@@ -47,10 +47,6 @@ function Admin() {
   const [epTitle, setEpTitle] = useState("");
   const [epContent, setEpContent] = useState("");
   const [epImages, setEpImages] = useState([]);
-  const [newsPosts, setNewsPosts] = useState([]);
-  const [postCaption, setPostCaption] = useState("");
-  const [postImage, setPostImage] = useState(null);
-  const [postPreview, setPostPreview] = useState(null);
   const selectedBook = books.find(b => b.id.toString() === selectedBookId.toString());
   const isManga = selectedBook?.category === "มังงะ";
   const [banners, setBanners] = useState([]);
@@ -86,7 +82,6 @@ function Admin() {
     if (selectedBookId) { fetchEpisodes(selectedBookId); setEpContent(""); setEpImages([]); }
     else { setEpisodes([]); }
   }, [selectedBookId]);
-  useEffect(() => { fetchPosts(); }, []);
 
   // ── Navbar effects (เพิ่มใหม่) ──
   useEffect(() => {
@@ -185,6 +180,7 @@ function Admin() {
     }))).then(base64Array => setEpImages(prev => [...prev, ...base64Array]));
   };
   const removeEpImage = (indexToRemove) => setEpImages(prev => prev.filter((_, index) => index !== indexToRemove));
+  
   const fetchBanners = async () => {
     const token = localStorage.getItem('token'); if (!token) return;
     try { const res = await axios.get('http://localhost:3001/banners'); setBanners(res.data); }
@@ -208,6 +204,7 @@ function Admin() {
       alert("ลบแบนเนอร์สำเร็จ!"); fetchBanners();
     } catch (error) { console.error("Error deleting banner:", error); alert("เกิดข้อผิดพลาดในการลบแบนเนอร์"); }
   };
+  
   const handleAddBook = async (e) => {
     e.preventDefault();
     const token = localStorage.getItem("token");
@@ -242,30 +239,6 @@ function Admin() {
       await axios.delete(`http://localhost:3001/admin/delete-episode/${epId}`, { headers: { Authorization: `Bearer ${token}` } });
       alert("ลบตอนสำเร็จ"); fetchEpisodes(selectedBookId);
     } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาดในการลบ"); }
-  };
-  const fetchPosts = async () => {
-    try { const res = await axios.get("http://localhost:3001/posts"); setNewsPosts(res.data); }
-    catch (err) { console.error("Error fetching posts:", err); }
-  };
-  const handlePostImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) { setPostImage(file); const reader = new FileReader(); reader.onloadend = () => setPostPreview(reader.result); reader.readAsDataURL(file); }
-  };
-  const handleCreatePost = async (e) => {
-    e.preventDefault();
-    const token = localStorage.getItem("token");
-    if (!postCaption && !postImage) return alert("กรุณาใส่ข้อความหรือรูปภาพอย่างน้อยหนึ่งอย่างครับ");
-    const formData = new FormData(); formData.append("caption", postCaption); if (postImage) formData.append("image", postImage);
-    try {
-      await axios.post("http://localhost:3001/admin/add-post", formData, { headers: { "Content-Type": "multipart/form-data", Authorization: `Bearer ${token}` } });
-      alert("สร้างโพสต์สำเร็จ!"); setPostCaption(""); setPostImage(null); setPostPreview(null); fetchPosts();
-    } catch (err) { alert("เกิดข้อผิดพลาดในการสร้างโพสต์"); }
-  };
-  const handleDeletePost = async (id) => {
-    if (!window.confirm("ต้องการลบโพสต์นี้ใช่หรือไม่?")) return;
-    const token = localStorage.getItem("token");
-    try { await axios.delete(`http://localhost:3001/admin/delete-post/${id}`, { headers: { Authorization: `Bearer ${token}` } }); fetchPosts(); }
-    catch (err) { alert("ลบโพสต์ไม่สำเร็จ"); }
   };
 
   // ================= STYLES (เดิม) =================
@@ -388,6 +361,7 @@ function Admin() {
           </div>
         )}
 
+        {/* ══ จัดการ BANNERS ══ */}
         <section className="admin-banners" style={{ marginTop: '40px', padding: '20px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
           <h2 style={{ color: '#b5651d', borderBottom: '2px solid #0000', paddingBottom: '10px' }}><i className="fas fa-image" style={{ marginRight: '10px' }}></i> จัดการแบนเนอร์ (Home Page)</h2>
           <form onSubmit={handleAddBanner} style={{ marginTop: '20px', display: 'flex', gap: '15px', alignItems: 'center' }}>
@@ -408,32 +382,6 @@ function Admin() {
           </div>
         </section>
 
-        <section className="admin-posts" style={{ marginTop: '40px', padding: '20px', background: '#fff', borderRadius: '15px', border: '2px solid #eee' }}>
-          <h2 style={{ color: '#333', borderBottom: '2px solid #333', paddingBottom: '10px' }}><i className="fas fa-bullhorn" style={{ marginRight: '10px', color: '#ff4e63' }}></i> สร้างโพสต์ใหม่ (Coming Soon)</h2>
-          <form onSubmit={handleCreatePost} style={{ marginTop: '20px' }}>
-            <label>ข้อความบรรยาย (Caption)</label>
-            <textarea style={{ ...inputStyle, height: '100px', resize: 'vertical' }} placeholder="เขียนอะไรบางอย่าง..." value={postCaption} onChange={(e) => setPostCaption(e.target.value)} />
-            <label>แนบรูปภาพ (ถ้ามี)</label>
-            <input type="file" accept="image/*" onChange={handlePostImageChange} style={inputStyle} />
-            {postPreview && <div style={{ marginBottom: '15px', textAlign: 'center' }}><img src={postPreview} alt="Preview" style={{ maxWidth: '100%', borderRadius: '8px', maxHeight: '200px' }} /></div>}
-            <button type="submit" style={btnStyle}> ประกาศข่าวเลย</button>
-          </form>
-          <div style={{ marginTop: '30px' }}>
-            <h3 style={{ fontSize: '16px', color: '#666' }}>รายการข่าวสารล่าสุด</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '15px' }}>
-              {newsPosts.map(post => (
-                <div key={post.id} style={{ display: 'flex', gap: '15px', padding: '10px', border: '1px solid #eee', borderRadius: '8px', alignItems: 'center', position: 'relative' }}>
-                  {post.image_url && <img src={`http://localhost:3001${post.image_url}`} alt="Post" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px' }} />}
-                  <div style={{ flex: 1, overflow: 'hidden' }}>
-                    <p style={{ margin: 0, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{post.caption || "(ไม่มีข้อความ)"}</p>
-                    <small style={{ color: '#999' }}>{new Date(post.created_at).toLocaleString('th-TH')}</small>
-                  </div>
-                  <button onClick={() => handleDeletePost(post.id)} style={{ color: '#ff4e63', border: 'none', background: 'none', cursor: 'pointer' }}><i className="fas fa-trash"></i></button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
       </div>
     </div>
   );
