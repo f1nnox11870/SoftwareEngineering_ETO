@@ -13,8 +13,8 @@ const port = 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_fallback_secret';
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const db = new sqlite3.Database('./users.db', (err) => {
     if (err) {
