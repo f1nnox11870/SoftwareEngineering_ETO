@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - sqlite_data:/app
+      - /app/node_modules
+    environment:
+      - JWT_SECRET=my_super_secret_key
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host"
+    stdin_open: true
+    tty: true
+    depends_on:
+      - backend
+
+volumes:
+  sqlite_data:
