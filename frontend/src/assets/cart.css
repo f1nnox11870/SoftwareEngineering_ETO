@@ -37,7 +37,7 @@
     font-weight: 700;
     margin-bottom: 24px;
     color: #222;
-    border-bottom: 3px solid #ff4e63;
+    border-bottom: 3px solid #b5651d;
     display: inline-block;
     padding-bottom: 5px;
 }
@@ -159,14 +159,14 @@
 }
 
 .summary-total span:last-child {
-    color: #ff4e63;
+    color: #b5651d;
 }
 
 .btn-checkout {
     width: 100%;
     margin-top: 20px;
     padding: 12px;
-    background: #ff4e63;
+    background: #b5651d;
     color: #fff;
     border: none;
     border-radius: 8px;
@@ -177,7 +177,7 @@
 }
 
 .btn-checkout:hover {
-    background: #e63e50;
+    background: #b5651d;
 }
 
 .empty-cart {

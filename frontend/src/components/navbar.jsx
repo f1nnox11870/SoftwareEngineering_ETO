@@ -10,22 +10,43 @@ const MAIN_CATEGORIES = [
 ];
 
 // ── Notification helpers ──
-function formatTime(dateStr) {
-    if (!dateStr) return '';
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const min = Math.floor(diff / 60000);
-    if (min < 1)   return 'เมื่อกี้';
-    if (min < 60)  return `${min} นาทีที่แล้ว`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24)   return `${hr} ชั่วโมงที่แล้ว`;
-    const day = Math.floor(hr / 24);
-    if (day === 1) return 'เมื่อวาน';
-    if (day < 7)   return `${day} วันที่แล้ว`;
-    return new Date(dateStr).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+// แปลง SQLite datetime string → Date object ให้ถูก timezone
+// SQLite ส่งมาเป็น "2026-03-31 08:06:00" (UTC, ไม่มี Z) → ต้องเติม Z
+function parseSQLiteDate(dateStr) {
+    if (!dateStr) return null;
+    const normalized = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+    const d = new Date(normalized);
+    return isNaN(d.getTime()) ? null : d;
 }
 
-function buildNotifications(historyData, topupData, newChapterData = [], readIds = new Set()) {
+function formatTime(dateStr) {
+    if (!dateStr) return '';
+    const date = parseSQLiteDate(dateStr);
+    if (!date) return '';
+
+    const diff = Date.now() - date.getTime();
+    const min = Math.floor(diff / 60000);
+
+    // ถ้าเกิน 24 ชั่วโมง แสดง วัน/เดือน/ปี พร้อมเวลาจริง
+    if (diff >= 24 * 60 * 60 * 1000) {
+        const day   = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year  = date.getFullYear() + 543; // แปลงเป็น พ.ศ.
+        const hh    = String(date.getHours()).padStart(2, '0');
+        const mm    = String(date.getMinutes()).padStart(2, '0');
+        return `${day}/${month}/${year} ${hh}:${mm}`;
+    }
+
+    if (min < 1)  return 'เมื่อกี้';
+    if (min < 60) return `${min} นาทีที่แล้ว`;
+    const hr = Math.floor(min / 60);
+    return `${hr} ชั่วโมงที่แล้ว`;
+}
+
+function buildNotifications(historyData, topupData, newChapterData = [], userNotifData = [], readIds = new Set()) {
     const notifs = [];
+
+    // ── ตอนใหม่ ──
     newChapterData.forEach(c => {
         const nid = `newchap-${c.chapter_id}`;
         notifs.push({
@@ -38,24 +59,38 @@ function buildNotifications(historyData, topupData, newChapterData = [], readIds
             book_id: c.book_id,
         });
     });
-    topupData.forEach(t => {
-        const nid = `topup-${t.id}`;
+
+    // ── การแจ้งเตือนเติมเหรียญจาก server (approved / rejected / pending) ──
+    // ใช้ user_notifications จาก API ใหม่ก่อน (มีสถานะจริงจาก admin)
+    userNotifData.forEach(n => {
+        const nid = `usernotif-${n.id}`;
         notifs.push({
             id: nid,
-            title: t.status === 'approved'
-                ? `เติมเหรียญสำเร็จ +${Number(t.total_coins).toLocaleString()} เหรียญ`
-                : t.status === 'rejected'
-                    ? 'คำขอเติมเหรียญถูกปฏิเสธ'
-                    : 'คำขอเติมเหรียญรอการตรวจสอบ',
-            desc: t.status === 'approved'
-                ? `ชำระ ฿${t.amount} — รับ ${Number(t.total_coins).toLocaleString()} เหรียญแล้ว`
-                : t.status === 'rejected'
-                    ? (t.note || 'กรุณาติดต่อสนับสนุน')
-                    : `แพ็กเกจ ฿${t.amount} — รอแอดมินตรวจสอบ`,
-            time: formatTime(t.created_at),
-            unread: !readIds.has(nid) && t.status === 'approved',
+            title: n.title,
+            desc: n.message || '',
+            time: formatTime(n.created_at),
+            unread: !n.is_read,
+            tag: n.type,
+            serverNotifId: n.id,
         });
     });
+
+    // ── topup_requests ที่ยัง pending (ยังไม่มีใน user_notifications) ──
+    const coveredRefIds = new Set(userNotifData.map(n => n.ref_id).filter(Boolean));
+    topupData.forEach(t => {
+        if (t.status === 'pending' && !coveredRefIds.has(t.id)) {
+            const nid = `topup-${t.id}`;
+            notifs.push({
+                id: nid,
+                title: 'คำขอเติมเหรียญรอการตรวจสอบ',
+                desc: `แพ็กเกจ ฿${t.amount} — รอแอดมินตรวจสอบ`,
+                time: formatTime(t.created_at),
+                unread: false,
+                tag: 'topup_pending',
+            });
+        }
+    });
+
     return notifs.slice(0, 20);
 }
 
@@ -95,6 +130,7 @@ function Navbar() {
 
     // ── Notification State ──
     const [notifications, setNotifications] = useState([]);
+    const [adminNotifications, setAdminNotifications] = useState([]);
 
     // ── Login / Register Modal ──
     const [modal, setModal] = useState(null); // null | 'login' | 'register'
@@ -143,9 +179,10 @@ function Navbar() {
             .catch(() => {});
 
         refreshNotifications(token);
+        refreshAdminNotifications(token, savedRole);
     }, []);
 
-    // ── Coin polling ──
+    // ── Coin + Notification polling ──
     useEffect(() => {
         if (!isLoggedIn) { clearInterval(coinInterval.current); return; }
         const token = localStorage.getItem('token');
@@ -153,9 +190,23 @@ function Navbar() {
             axios.get('http://localhost:3001/profile', { headers: { Authorization: `Bearer ${token}` } })
                 .then(res => setCoins(res.data.coins ?? 0))
                 .catch(() => {});
+            refreshAdminNotifications(token);
+            refreshNotifications(token);
         }, 30000);
         return () => clearInterval(coinInterval.current);
-    }, [isLoggedIn]);
+    }, [isLoggedIn, role]);
+
+    // ── ฟัง event จาก AdminTopup เมื่อ approve/reject → refresh ทันที ──
+    useEffect(() => {
+        const handler = () => {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            refreshAdminNotifications(token);
+            refreshNotifications(token);
+        };
+        window.addEventListener('topup-action', handler);
+        return () => window.removeEventListener('topup-action', handler);
+    }, []);
 
     // ── Close dropdowns on outside click ──
     useEffect(() => {
@@ -172,15 +223,50 @@ function Navbar() {
     const refreshNotifications = async (token) => {
         const headers = { Authorization: `Bearer ${token}` };
         const readIds = loadReadIds();
-        const [topupRes, histRes, newChapRes] = await Promise.all([
+        const [topupRes, histRes, newChapRes, userNotifRes] = await Promise.all([
             axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
             axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
             axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+            axios.get('http://localhost:3001/user/notifications', { headers }).catch(() => ({ data: [] })),
         ]);
-        setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds));
+        setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, userNotifRes.data, readIds));
     };
 
-    const unreadCount = notifications.filter(n => n.unread).length;
+    // ── Admin notification helpers ──
+    const refreshAdminNotifications = async (token, currentRole) => {
+        const r = currentRole || role;
+        if (r !== 'admin') return;
+        try {
+            const res = await axios.get('http://localhost:3001/admin/notifications', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setAdminNotifications(res.data);
+        } catch {}
+    };
+
+    const markAdminAllRead = async () => {
+        const token = localStorage.getItem('token');
+        setAdminNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
+        await axios.put('http://localhost:3001/admin/notifications/read-all', {}, {
+            headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => {});
+    };
+
+    const markAdminOneRead = async (notif) => {
+        const token = localStorage.getItem('token');
+        setAdminNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: 1 } : n));
+        await axios.put(`http://localhost:3001/admin/notifications/${notif.id}/read`, {}, {
+            headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => {});
+        // navigate ไปหน้า admin-topup ถ้าเป็น topup_pending
+        if (notif.type === 'topup_pending') {
+            setNotifOpen(false);
+            navigate('/admin-topup');
+        }
+    };
+
+    const unreadCount = notifications.filter(n => n.unread).length
+        + (role === 'admin' ? adminNotifications.filter(n => !n.is_read).length : 0);
 
     const markAllRead = () => {
         setNotifications(prev => prev.map(n => {
@@ -188,14 +274,21 @@ function Navbar() {
             return { ...n, unread: false };
         }));
         const token = localStorage.getItem('token');
-        const newChapIds = notifications
-            .filter(n => n.tag === 'new_chapter' && n.unread)
-            .map(n => Number(n.id.replace('newchap-', '')));
-        if (token && newChapIds.length > 0) {
-            axios.post('http://localhost:3001/notifications/new-chapters/seen',
-                { episodeIds: newChapIds },
+        if (token) {
+            // mark user_notifications ทั้งหมดบน server
+            axios.put('http://localhost:3001/user/notifications/read-all', {},
                 { headers: { Authorization: `Bearer ${token}` } }
             ).catch(() => {});
+
+            const newChapIds = notifications
+                .filter(n => n.tag === 'new_chapter' && n.unread)
+                .map(n => Number(n.id.replace('newchap-', '')));
+            if (newChapIds.length > 0) {
+                axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                    { episodeIds: newChapIds },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                ).catch(() => {});
+            }
         }
     };
 
@@ -203,8 +296,16 @@ function Navbar() {
         saveReadId(id);
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
         const notif = notifications.find(n => n.id === id);
+        const token = localStorage.getItem('token');
+
+        // mark บน server สำหรับ user_notifications (topup approved/rejected)
+        if (notif && notif.serverNotifId && token) {
+            axios.put(`http://localhost:3001/user/notifications/${notif.serverNotifId}/read`, {},
+                { headers: { Authorization: `Bearer ${token}` } }
+            ).catch(() => {});
+        }
+
         if (notif && notif.tag === 'new_chapter') {
-            const token = localStorage.getItem('token');
             const episodeId = Number(id.replace('newchap-', ''));
             if (token && episodeId) {
                 axios.post('http://localhost:3001/notifications/new-chapters/seen',
@@ -312,11 +413,44 @@ function Navbar() {
                                         <div className="notif-header">
                                             <span className="notif-title">การแจ้งเตือน</span>
                                             {unreadCount > 0 && (
-                                                <button className="notif-markall" onClick={markAllRead}>อ่านทั้งหมด</button>
+                                                <button className="notif-markall" onClick={() => { markAllRead(); if (role === 'admin') markAdminAllRead(); }}>อ่านทั้งหมด</button>
                                             )}
                                         </div>
                                         <div className="notif-list">
-                                            {notifications.length === 0 ? (
+
+                                            {/* ── ส่วน admin: คำขอเติมเหรียญรออนุมัติ ── */}
+                                            {role === 'admin' && adminNotifications.length > 0 && (
+                                                <>
+                                                    <div style={{ padding: '6px 14px 4px', fontSize: 11, color: '#ff4e63', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: '#fff8f8', borderBottom: '1px solid #ffe0e5' }}>
+                                                        <i className="fas fa-shield-alt" style={{ marginRight: 5 }}></i>Admin
+                                                    </div>
+                                                    {adminNotifications.slice(0, 10).map(n => (
+                                                        <div
+                                                            key={`admin-${n.id}`}
+                                                            className={`notif-item ${!n.is_read ? 'unread' : ''}`}
+                                                            onClick={() => markAdminOneRead(n)}
+                                                        >
+                                                            <div className="notif-icon-col" style={{ marginRight: 10, fontSize: 18 }}>
+                                                                <i className="fas fa-coins" style={{ color: '#f59e0b' }}></i>
+                                                            </div>
+                                                            <div className="notif-body">
+                                                                <div className="notif-item-title">{n.title}</div>
+                                                                <div className="notif-item-desc">{n.message}</div>
+                                                                <div className="notif-item-time">{formatTime(n.created_at)}</div>
+                                                            </div>
+                                                            {!n.is_read && <div className="notif-dot"></div>}
+                                                        </div>
+                                                    ))}
+                                                    {notifications.length > 0 && (
+                                                        <div style={{ padding: '6px 14px 4px', fontSize: 11, color: '#888', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', borderBottom: '1px solid #eee' }}>
+                                                            ทั่วไป
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+
+                                            {/* ── ส่วน user ปกติ ── */}
+                                            {notifications.length === 0 && (role !== 'admin' || adminNotifications.length === 0) ? (
                                                 <div style={{ padding: '24px', textAlign: 'center', color: '#aaa', fontSize: 13 }}>
                                                     ยังไม่มีการแจ้งเตือน
                                                 </div>
@@ -324,7 +458,11 @@ function Navbar() {
                                                 notifications.map(n => (
                                                     <div key={n.id} className={`notif-item ${n.unread ? 'unread' : ''}`} onClick={() => markOneRead(n.id)}>
                                                         <div className="notif-icon-col" style={{ marginRight: 10, fontSize: 20 }}>
-                                                            {n.tag === 'new_chapter' ? '' : n.title.includes('เติมเหรียญ') ? '' : ''}
+                                                            {n.tag === 'new_chapter' ? ''
+                                                                : n.tag === 'topup_approved' ? ''
+                                                                : n.tag === 'topup_rejected' ? ''
+                                                                : n.tag === 'topup_pending' ? ''
+                                                                : n.title.includes('เติมเหรียญ') ? '' : ''}
                                                         </div>
                                                         <div className="notif-body">
                                                             <div className="notif-item-title">{n.title}</div>
