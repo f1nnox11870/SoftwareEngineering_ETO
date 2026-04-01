@@ -6,6 +6,9 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    allowedHosts: ['eto-frontend.onrender.com']
+    allowedHosts: [
+      'eto-frontend.onrender.com',
+      'softwareengineering-eto.onrender.com'
+    ]
   }
 })
