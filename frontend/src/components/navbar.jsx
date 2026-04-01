@@ -146,7 +146,7 @@ function Navbar() {
 
     // ── Fetch categories ──
     useEffect(() => {
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories')
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories`)
             .then(res => setDbCategories(res.data))
             .catch(() => {});
     }, []);
@@ -155,7 +155,7 @@ function Navbar() {
     useEffect(() => {
         if (!isLoggedIn) return;
 
-        const socket = io('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}');
+        const socket = io(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}`);
 
         socket.on('new_episode_alert', (data) => {
             const token = localStorage.getItem('token');
@@ -183,7 +183,7 @@ function Navbar() {
 
         const headers = { Authorization: `Bearer ${token}` };
 
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers })
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile`, { headers })
             .then(res => {
                 setCoins(res.data.coins ?? 0);
                 setProfileImage(res.data.image || null);
@@ -192,11 +192,11 @@ function Navbar() {
             })
             .catch(() => {});
 
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers })
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart`, { headers })
             .then(res => setCartCount(res.data.length || 0))
             .catch(() => {});
 
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', { headers })
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites`, { headers })
             .then(res => setFavoriteIds(res.data.map(i => i.book_id)))
             .catch(() => {});
 
@@ -209,7 +209,7 @@ function Navbar() {
         if (!isLoggedIn) { clearInterval(coinInterval.current); return; }
         const token = localStorage.getItem('token');
         coinInterval.current = setInterval(() => {
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers: { Authorization: `Bearer ${token}` } })
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile`, { headers: { Authorization: `Bearer ${token}` } })
                 .then(res => setCoins(res.data.coins ?? 0))
                 .catch(() => {});
             refreshAdminNotifications(token);
@@ -252,10 +252,10 @@ function Navbar() {
         const headers = { Authorization: `Bearer ${token}` };
         const readIds = loadReadIds();
         const [topupRes, histRes, newChapRes, userNotifRes] = await Promise.all([
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/user/notifications', { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests`, { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history`, { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters`, { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/user/notifications`, { headers }).catch(() => ({ data: [] })),
         ]);
         setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, userNotifRes.data, readIds));
     };
@@ -265,7 +265,7 @@ function Navbar() {
         const r = currentRole || role;
         if (r !== 'admin') return;
         try {
-            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/notifications', {
+            const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/notifications`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setAdminNotifications(res.data);
@@ -275,7 +275,7 @@ function Navbar() {
     const markAdminAllRead = async () => {
         const token = localStorage.getItem('token');
         setAdminNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
-        await axios.put('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/notifications/read-all', {}, {
+        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/notifications/read-all`, {}, {
             headers: { Authorization: `Bearer ${token}` }
         }).catch(() => {});
     };
@@ -302,7 +302,7 @@ function Navbar() {
         }));
         const token = localStorage.getItem('token');
         if (token) {
-            axios.put('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/user/notifications/read-all', {},
+            axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/user/notifications/read-all`, {},
                 { headers: { Authorization: `Bearer ${token}` } }
             ).catch(() => {});
 
@@ -310,7 +310,7 @@ function Navbar() {
                 .filter(n => n.tag === 'new_chapter' && n.unread)
                 .map(n => Number(n.id.replace('newchap-', '')));
             if (newChapIds.length > 0) {
-                axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
+                axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen`,
                     { episodeIds: newChapIds },
                     { headers: { Authorization: `Bearer ${token}` } }
                 ).catch(() => {});
@@ -333,7 +333,7 @@ function Navbar() {
         if (notif && notif.tag === 'new_chapter') {
             const episodeId = Number(id.replace('newchap-', ''));
             if (token && episodeId) {
-                axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
+                axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen`,
                     { episodeIds: [episodeId] },
                     { headers: { Authorization: `Bearer ${token}` } }
                 ).catch(() => {});
@@ -594,15 +594,15 @@ function Navbar() {
                             if (savedRole) setRole(savedRole);
                             if (token) {
                                 const headers = { Authorization: `Bearer ${token}` };
-                                axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers })
+                                axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile`, { headers })
                                     .then(res => {
                                         setCoins(res.data.coins ?? 0);
                                         setProfileImage(res.data.image || null);
                                         if (res.data.role) setRole(res.data.role);
                                     }).catch(() => {});
-                                axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers })
+                                axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart`, { headers })
                                     .then(res => setCartCount(res.data.length || 0)).catch(() => {});
-                                axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', { headers })
+                                axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites`, { headers })
                                     .then(res => setFavoriteIds(res.data.map(i => i.book_id))).catch(() => {});
                                 refreshNotifications(token);
                             }
