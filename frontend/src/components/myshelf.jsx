@@ -36,7 +36,7 @@ function getImageUrl(path, fallback = 'https://via.placeholder.com/175x260?text=
 
     // กันเคสไม่มี /
     const clean = path.replace(/^\/+/, '');
-    return `http://localhost:3001/${clean}`;
+    return `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/${clean}`;
 }
 
 // ฟังก์ชันสร้าง Array การแจ้งเตือน
@@ -119,7 +119,7 @@ function MyShelf() {
     //  Fetch: ดึงข้อมูลหมวดหมู่จาก DB (เหมือน Topup)
     // ══════════════════════════════════════════
     useEffect(() => {
-        axios.get('http://localhost:3001/books/categories')
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories')
             .then(res => setDbCategories(res.data))
             .catch(() => {});
     }, []);
@@ -134,8 +134,8 @@ function MyShelf() {
         setLoading(true);
         try {
             const [resFull, resPartial] = await Promise.all([
-                axios.get('http://localhost:3001/library', { headers: { Authorization: `Bearer ${token}` } }),
-                axios.get('http://localhost:3001/library/episodes', { headers: { Authorization: `Bearer ${token}` } })
+                axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/library', { headers: { Authorization: `Bearer ${token}` } }),
+                axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/library/episodes', { headers: { Authorization: `Bearer ${token}` } })
             ]);
             
             setFullBooks(resFull.data || []);
@@ -159,7 +159,7 @@ function MyShelf() {
         if (!isLoggedIn) { clearInterval(coinInterval.current); return; }
         const token = localStorage.getItem('token');
         coinInterval.current = setInterval(() => {
-            axios.get('http://localhost:3001/profile', { headers: { Authorization: `Bearer ${token}` } })
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers: { Authorization: `Bearer ${token}` } })
                 .then(res => setCoins(res.data.coins ?? 0))
                 .catch(() => {});
         }, 30000);
@@ -184,7 +184,7 @@ function MyShelf() {
         const headers = { Authorization: `Bearer ${token}` };
 
         // Profile (เหรียญ + รูป)
-        axios.get('http://localhost:3001/profile', { headers })
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers })
             .then(res => {
                 setCoins(res.data.coins ?? 0);
                 setProfileImage(res.data.image || null);
@@ -194,10 +194,10 @@ function MyShelf() {
             .catch(() => {});
 
         // ตะกร้า + Favorites
-        axios.get('http://localhost:3001/cart', { headers })
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers })
             .then(res => setCartCount(res.data.length || 0))
             .catch(() => {});
-        axios.get('http://localhost:3001/favorites', { headers })
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', { headers })
             .then(res => setFavoriteIds(res.data.map(i => i.book_id)))
             .catch(() => {});
 
@@ -232,7 +232,7 @@ function MyShelf() {
             .filter(n => n.tag === 'new_chapter' && n.unread)
             .map(n => Number(n.id.replace('newchap-', '')));
         if (token && newChapIds.length > 0) {
-            axios.post('http://localhost:3001/notifications/new-chapters/seen',
+            axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
                 { episodeIds: newChapIds },
                 { headers: { Authorization: `Bearer ${token}` } }
             ).catch(() => {});
@@ -247,7 +247,7 @@ function MyShelf() {
             const token = localStorage.getItem('token');
             const episodeId = Number(id.replace('newchap-', ''));
             if (token && episodeId) {
-                axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
                     { episodeIds: [episodeId] },
                     { headers: { Authorization: `Bearer ${token}` } }
                 ).catch(() => {});
@@ -263,9 +263,9 @@ function MyShelf() {
         const headers = { Authorization: `Bearer ${token}` };
         const readIds = loadReadIds();   // โหลด IDs ที่เคยอ่านแล้วจาก localStorage
         const [topupRes, histRes, newChapRes] = await Promise.all([
-            axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-            axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
-            axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
         ]);
         setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds));
     };

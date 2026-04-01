@@ -97,7 +97,7 @@ function Admin() {
     if (token) { setIsLoggedIn(true); if (user) setUsername(user); setRole(savedRole); }
   }, []);
   useEffect(() => {
-    axios.get('http://localhost:3001/books/categories').then(res => setDbCategories(res.data)).catch(() => {});
+    axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories').then(res => setDbCategories(res.data)).catch(() => {});
   }, []);
   useEffect(() => {
     const h = (e) => {
@@ -113,15 +113,15 @@ function Admin() {
     const token = localStorage.getItem('token');
     const fetchProfile = async () => {
       try {
-        const res = await axios.get('http://localhost:3001/profile', { headers: { Authorization: `Bearer ${token}` } });
+        const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers: { Authorization: `Bearer ${token}` } });
         setCoins(res.data.coins ?? 0); setProfileImage(res.data.image || null);
       } catch { setCoins(0); }
     };
     fetchProfile();
     refreshNotifications(token);
-    axios.get('http://localhost:3001/favorites', { headers: { Authorization: `Bearer ${token}` } })
+    axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', { headers: { Authorization: `Bearer ${token}` } })
       .then(res => setFavoriteIds(res.data.map(i => i.book_id))).catch(() => {});
-    axios.get('http://localhost:3001/cart', { headers: { Authorization: `Bearer ${token}` } })
+    axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers: { Authorization: `Bearer ${token}` } })
       .then(res => setCartCount(res.data.length)).catch(() => {});
     coinInterval.current = setInterval(fetchProfile, 30000);
     return () => clearInterval(coinInterval.current);
@@ -132,8 +132,8 @@ function Admin() {
     const readIds = loadReadIds();
     try {
       const [topupRes, histRes] = await Promise.all([
-        axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-        axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
       ]);
       const notifs = [];
       topupRes.data.forEach(t => {
@@ -163,11 +163,11 @@ function Admin() {
 
   // ================= API CALLS (เดิม) =================
   const fetchBooks = async () => {
-    try { const res = await axios.get("http://localhost:3001/books"); setBooks(res.data); }
+    try { const res = await axios.get("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books"); setBooks(res.data); }
     catch (err) { console.error("Error fetching books:", err); }
   };
   const fetchEpisodes = async (bookId) => {
-    try { const res = await axios.get(`http://localhost:3001/books/${bookId}/episodes`); setEpisodes(res.data); }
+    try { const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/${bookId}/episodes`); setEpisodes(res.data); }
     catch (err) { console.error("Error fetching episodes:", err); }
   };
 
@@ -189,7 +189,7 @@ function Admin() {
   
   const fetchBanners = async () => {
     const token = localStorage.getItem('token'); if (!token) return;
-    try { const res = await axios.get('http://localhost:3001/banners'); setBanners(res.data); }
+    try { const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/banners'); setBanners(res.data); }
     catch (error) { console.error("Error fetching banners:", error); }
   };
   const handleAddBanner = async (e) => {
@@ -198,7 +198,7 @@ function Admin() {
     if (!newBannerImage) { alert("กรุณาเลือกรูปภาพแบนเนอร์ครับ"); return; }
     const formData = new FormData(); formData.append('image', newBannerImage);
     try {
-      await axios.post('http://localhost:3001/banners/add', formData, { headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` } });
+      await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/banners/add', formData, { headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` } });
       alert("เพิ่มแบนเนอร์สำเร็จ!"); setNewBannerImage(null); fetchBanners();
     } catch (error) { console.error("Error adding banner:", error); alert("เกิดข้อผิดพลาดในการเพิ่มแบนเนอร์"); }
   };
@@ -206,7 +206,7 @@ function Admin() {
     const token = localStorage.getItem('token'); if (!token) return;
     if (!window.confirm("คุณแน่ใจหรือไม่ว่าต้องการลบแบนเนอร์นี้?")) return;
     try {
-      await axios.delete(`http://localhost:3001/banners/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/banners/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       alert("ลบแบนเนอร์สำเร็จ!"); fetchBanners();
     } catch (error) { console.error("Error deleting banner:", error); alert("เกิดข้อผิดพลาดในการลบแบนเนอร์"); }
   };
@@ -218,7 +218,7 @@ function Admin() {
     if (!category) return alert("กรุณาเลือกหมวดหมู่ด้วยครับ");
     if (!genre) return alert("กรุณาเลือกแนวหนังสือด้วยครับ");
     try {
-      await axios.post("http://localhost:3001/admin/add-book", { title, author, category: genre, description, image, price: Number(price) }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/add-book", { title, author, category: genre, description, image, price: Number(price) }, { headers: { Authorization: `Bearer ${token}` } });
       alert("เพิ่มหนังสือสำเร็จ!"); setTitle(""); setImage(""); setAuthor(""); setCategory(""); setGenre(""); setDescription(""); setPrice(""); fetchBooks();
     } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาด"); }
   };
@@ -235,7 +235,7 @@ function Admin() {
       payloadContent = epContent;
     }
     try {
-      await axios.post("http://localhost:3001/admin/add-episode", { book_id: selectedBookId, episode_number: epNumber, title: epTitle, content: payloadContent }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/add-episode", { book_id: selectedBookId, episode_number: epNumber, title: epTitle, content: payloadContent }, { headers: { Authorization: `Bearer ${token}` } });
       alert("เพิ่มตอนใหม่สำเร็จ!"); setEpNumber(""); setEpTitle(""); setEpContent(""); setEpImages([]); fetchEpisodes(selectedBookId);
     } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาด"); }
   };
@@ -243,7 +243,7 @@ function Admin() {
     if (!window.confirm("คุณแน่ใจหรือไม่ว่าต้องการลบตอนนี้? (ลบแล้วลบเลย)")) return;
     const token = localStorage.getItem("token");
     try {
-      await axios.delete(`http://localhost:3001/admin/delete-episode/${epId}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/delete-episode/${epId}`, { headers: { Authorization: `Bearer ${token}` } });
       alert("ลบตอนสำเร็จ"); fetchEpisodes(selectedBookId);
     } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาดในการลบ"); }
   };
@@ -419,7 +419,7 @@ function Admin() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px', marginTop: '15px' }}>
               {banners.map(banner => (
                 <div key={banner.id} style={{ position: 'relative', background: '#f5f5f5', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
-                  <img src={`http://localhost:3001${banner.image}`} alt={banner.title || 'Banner'} style={{ width: '100%', height: '120px', objectFit: 'cover' }} />
+                  <img src={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${banner.image}`} alt={banner.title || 'Banner'} style={{ width: '100%', height: '120px', objectFit: 'cover' }} />
                   <button onClick={() => handleDeleteBanner(banner.id)} style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(255,255,255,0.7)', color: '#ff4e63', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }} title="ลบแบนเนอร์"><i className="fas fa-trash-alt"></i></button>
                 </div>
               ))}

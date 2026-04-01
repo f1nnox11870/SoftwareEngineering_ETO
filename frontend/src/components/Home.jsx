@@ -240,7 +240,7 @@ function Home() {
     const fetchTopupHistory = async () => {
     try {
         const token = localStorage.getItem('token');
-        const res = await axios.get('http://localhost:3001/topup-history', {
+        const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup-history', {
             headers: { Authorization: `Bearer ${token}` }
         });
         setTopupHistory(res.data);
@@ -265,7 +265,7 @@ const handleToggleFavorite = async (e, book) => {
     }
 
     try {
-        const res = await axios.post('http://localhost:3001/favorites/toggle', 
+        const res = await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites/toggle', 
             { bookId: book.id }, 
             { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -303,7 +303,7 @@ const handleToggleFavorite = async (e, book) => {
         const token = localStorage.getItem('token');
         if (!token) return;
         try {
-            const res = await axios.get('http://localhost:3001/purchased', {
+            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/purchased', {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setPurchasedIds(res.data); // data จะมาเป็น array ของ book_id เช่น [1, 5, 12]
@@ -316,7 +316,7 @@ const handleToggleFavorite = async (e, book) => {
         if (!token) return;
         
         try {
-            const res = await axios.get('http://localhost:3001/favorites', {
+            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', {
                 headers: { Authorization: `Bearer ${token}` }
             });
             // ข้อมูลจะมาในรูปแบบ [{book_id: 1}, {book_id: 3}] เราจะแปลงให้เป็น [1, 3] เพื่อง่ายต่อการเช็ค
@@ -351,7 +351,7 @@ const handleToggleFavorite = async (e, book) => {
         fetchFavoriteIds(); 
         fetchPurchasedIds();
         // 2. ดึงข้อมูล "หนังสือที่ซื้อเป็นเจ้าของแล้ว" (คนละส่วนกัน)
-        axios.get('http://localhost:3001/library/check', {
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/library/check', {
             headers: { Authorization: `Bearer ${token}` }
         })
         .then(res => {
@@ -374,7 +374,7 @@ const handleToggleFavorite = async (e, book) => {
         if (!token) return;
         
         try {
-            const res = await axios.get('http://localhost:3001/cart', {
+            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', {
                 headers: { Authorization: `Bearer ${token}` }
             });
             // ตรงนี้ปรับให้ตรงกับโค้ด set state ตะกร้าเดิมของคุณ (เช่น setCartCount(res.data.length))
@@ -400,7 +400,7 @@ const handleToggleFavorite = async (e, book) => {
     }
 
     try {
-        await axios.post('http://localhost:3001/cart/add', 
+        await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart/add', 
             { book_id: bookId }, 
             { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -478,7 +478,7 @@ const handleToggleFavorite = async (e, book) => {
     useEffect(() => {
         const fetchBooks = async () => {
             try {
-                const res = await axios.get('http://localhost:3001/books');
+                const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books');
                 setBooks(res.data);
             } catch (err) {
                 console.error("Error fetching books:", err);
@@ -487,7 +487,7 @@ const handleToggleFavorite = async (e, book) => {
         fetchBooks();
         fetchBanners();
         // ดึง subcategories จริงจาก DB
-        axios.get('http://localhost:3001/books/categories')
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories')
             .then(res => setDbCategories(res.data))
             .catch(err => console.error('Error fetching categories:', err));
     }, []);
@@ -502,7 +502,7 @@ const fetchPosts = async () => {
         const token = localStorage.getItem("token");
         
         // ส่ง GET ขอข้อมูล โดยแนบ Token ไปใน Headers ด้วย (ถึงแม้ว่า Backend จะไม่บังคับ แต่เราส่งไปเพื่อให้รู้ userId)
-        const res = await axios.get("http://localhost:3001/posts", {
+        const res = await axios.get("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/posts", {
             headers: token ? { Authorization: `Bearer ${token}` } : {}
         });
         
@@ -532,7 +532,7 @@ const fetchPosts = async () => {
                 setIsLoggedIn(true);
                 setRole(role);
                 try {
-                    const res = await axios.get('http://localhost:3001/profile', {
+                    const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', {
                         headers: { Authorization: `Bearer ${token}` }
                     });
                     setCoins(res.data.coins ?? 0); 
@@ -589,7 +589,7 @@ const fetchPosts = async () => {
             .filter(n => n.tag === 'new_chapter' && n.unread)
             .map(n => Number(n.id.replace('newchap-', '')));
         if (token && newChapIds.length > 0) {
-            axios.post('http://localhost:3001/notifications/new-chapters/seen',
+            axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
                 { episodeIds: newChapIds },
                 { headers: { Authorization: `Bearer ${token}` } }
             ).catch(() => {});
@@ -604,7 +604,7 @@ const fetchPosts = async () => {
             const token = localStorage.getItem('token');
             const episodeId = Number(id.replace('newchap-', ''));
             if (token && episodeId) {
-                axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
                     { episodeIds: [episodeId] },
                     { headers: { Authorization: `Bearer ${token}` } }
                 ).catch(() => {});
@@ -619,15 +619,15 @@ const fetchPosts = async () => {
         const headers = { Authorization: `Bearer ${token}` };
         const readIds = loadReadIds();   // โหลด IDs ที่เคยอ่านแล้วจาก localStorage
         const [topupRes, histRes, newChapRes] = await Promise.all([
-            axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-            axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
-            axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
         ]);
         setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds));
     };
     const fetchBanners = async () => {
         try {
-            const res = await axios.get('http://localhost:3001/banners'); // ดึงข้อมูลแบนเนอร์จาก API ที่เพิ่งสร้าง
+            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/banners'); // ดึงข้อมูลแบนเนอร์จาก API ที่เพิ่งสร้าง
             setBanners(res.data); // เอาแบนเนอร์ไปใส่ใน State
         } catch (error) {
             console.error("Error fetching banners:", error);
@@ -653,7 +653,7 @@ const fetchPosts = async () => {
     // 🟢 ฟังก์ชันกด Like
 const handleLikePost = async (postId) => {
     try {
-        await axios.post(`http://localhost:3001/posts/${postId}/like`);
+        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/posts/${postId}/like`);
         // อัปเดตตัวเลขบนหน้าจอทันทีโดยไม่ต้องรีเฟรช
         setNewsPosts(prev => prev.map(post => 
             post.id === postId ? { ...post, likes_count: (post.likes_count || 0) + 1 } : post
@@ -666,7 +666,7 @@ const handleLikePost = async (postId) => {
 // 🔴 ฟังก์ชันกด Dislike
 const handleDislikePost = async (postId) => {
     try {
-        await axios.post(`http://localhost:3001/posts/${postId}/dislike`);
+        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/posts/${postId}/dislike`);
         // อัปเดตตัวเลขบนหน้าจอทันที
         setNewsPosts(prev => prev.map(post => 
             post.id === postId ? { ...post, dislikes_count: (post.dislikes_count || 0) + 1 } : post
@@ -687,7 +687,7 @@ const handleVotePost = async (postId, typeToVote) => {
 
     try {
         // เรียก API ไปที่ Backend
-        const res = await axios.post(`http://localhost:3001/posts/${postId}/vote`, 
+        const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/posts/${postId}/vote`, 
             { type: typeToVote }, 
             { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -745,13 +745,13 @@ const handleSubmitComment = async (postId) => {
     const token = localStorage.getItem("token");
     try {
         // 1. ส่งข้อมูลคอมเมนต์ไปบันทึก
-        await axios.post(`http://localhost:3001/posts/${postId}/comment`, 
+        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/posts/${postId}/comment`, 
             { text }, 
             { headers: { Authorization: `Bearer ${token}` } }
         );
         
         // 🌟 2. ดึงข้อมูลโพสต์ใหม่ (ต้องส่ง Token ไปด้วย เพื่อให้รู้ว่าเราเคยกดไลค์ไว้) 🌟
-        const res = await axios.get("http://localhost:3001/posts", {
+        const res = await axios.get("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/posts", {
             headers: token ? { Authorization: `Bearer ${token}` } : {}
         });
         setNewsPosts(res.data);
@@ -895,14 +895,14 @@ const novelBooks = books
                                         {banner.link ? (
                                             <a href={banner.link} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: '100%', height: '100%' }}>
                                                 <img 
-                                                    src={`http://localhost:3001${banner.image}`} 
+                                                    src={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${banner.image}`} 
                                                     alt={banner.title || 'Banner'} 
                                                     style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} 
                                                 />
                                             </a>
                                         ) : (
                                             <img 
-                                                src={`http://localhost:3001${banner.image}`} 
+                                                src={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${banner.image}`} 
                                                 alt={banner.title || 'Banner'} 
                                                 style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} 
                                             />
@@ -1116,7 +1116,7 @@ const novelBooks = books
                             
                             {post.image_url && (
                                 <img 
-                                    src={`http://localhost:3001${post.image_url}`} 
+                                    src={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${post.image_url}`} 
                                     alt="Post" 
                                     style={{ width: '100%', borderRadius: '10px', marginTop: '10px', maxHeight: '400px', objectFit: 'cover' }} 
                                 />
@@ -1165,7 +1165,7 @@ const novelBooks = books
                                                             ? (comment.profile_image.startsWith('http') || comment.profile_image.startsWith('data:image')
                                                                 ? comment.profile_image 
                                                                 // ถ้าไม่ใช่ ค่อยเอามาต่อกับ localhost
-                                                                : `http://localhost:3001${comment.profile_image.startsWith('/') ? '' : '/'}${comment.profile_image}`)
+                                                                : `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${comment.profile_image.startsWith('/') ? '' : '/'}${comment.profile_image}`)
                                                             : 'https://cdn-icons-png.flaticon.com/512/149/149071.png'
                                                     } 
                                                     alt="profile" 

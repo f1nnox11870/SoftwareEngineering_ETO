@@ -28,7 +28,7 @@ function Read() {
         const token = localStorage.getItem('token');
         if (token) {
             try {
-                const res = await axios.get(`http://localhost:3001/unlocked/${id}`, {
+                const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/unlocked/${id}`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setUnlockedEpisodes(res.data);
@@ -41,12 +41,12 @@ function Read() {
     const fetchBookData = async () => {
         try {
             // 1. ดึงข้อมูลหนังสือทั้งหมดมาเพื่อหาเล่มที่ตรงกับ ID
-            const bookRes = await axios.get('http://localhost:3001/books');
+            const bookRes = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books');
             const foundBook = bookRes.data.find(b => b.id.toString() === id.toString());
             setBook(foundBook);
 
             // 2. ดึงรายการตอนของหนังสือเล่มนี้
-            const epRes = await axios.get(`http://localhost:3001/books/${id}/episodes`);
+            const epRes = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/${id}/episodes`);
             // แนะนำให้เรียงลำดับตอนเสมอ เพื่อให้ปุ่ม Next/Prev ทำงานถูกต้อง
             const sortedEpisodes = epRes.data.sort((a, b) => a.episode_number - b.episode_number);
             setEpisodes(sortedEpisodes);
@@ -74,7 +74,7 @@ function Read() {
             const confirmBuy = window.confirm(`ตอนนี้ติดเหรียญ 🪙\nต้องการใช้ 5 เหรียญเพื่อปลดล็อก "${ep.title}" หรือไม่?`);
             if (confirmBuy) {
                 try {
-                    const res = await axios.post('http://localhost:3001/unlock', {
+                    const res = await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/unlock', {
                         bookId: id,
                         episodeId: ep.id,
                         coinCost: 5 
@@ -127,7 +127,7 @@ function Read() {
         if (!token) return;
 
         try {
-            const res = await axios.get(`http://localhost:3001/history/${id}`, {
+            const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history/${id}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setMaxEpRead(res.data.max_episode_number || 0);
@@ -142,7 +142,7 @@ function Read() {
         if (!token) return;
 
         try {
-            await axios.post('http://localhost:3001/history/update', {
+            await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history/update', {
                 book_id: id,
                 episode_number: epNum
             }, {

@@ -114,7 +114,7 @@ function Favorites() {
         const headers = { Authorization: `Bearer ${token}` };
 
         // Profile
-        axios.get('http://localhost:3001/profile', { headers })
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers })
             .then(res => {
                 setUsername(res.data.username);
                 setCoins(res.data.coins ?? 0);
@@ -123,7 +123,7 @@ function Favorites() {
             .catch(() => { localStorage.clear(); navigate('/'); });
 
         // Favorites
-        axios.get('http://localhost:3001/favorites/full', { headers })
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites/full', { headers })
             .then(res => { setFavorites(res.data); setLoading(false); })
             .catch(err => {
                 if (err.response?.status === 403) { localStorage.clear(); navigate('/'); }
@@ -131,29 +131,29 @@ function Favorites() {
             });
 
         // Favorite IDs (for badge)
-        axios.get('http://localhost:3001/favorites', { headers })
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', { headers })
             .then(res => setFavoriteIds(res.data.map(item => item.book_id)))
             .catch(() => {});
 
         // Notifications
         const readIds = loadReadIds();
         Promise.all([
-            axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-            axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
-            axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
         ]).then(([topupRes, histRes, newChapRes]) =>
             setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds))
         );
 
         // Cart count
-        axios.get('http://localhost:3001/cart', { headers })
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers })
             .then(res => setCartCount(res.data.length))
             .catch(() => {});
     }, [navigate]);
 
     // ── Subcategories ──
     useEffect(() => {
-        axios.get('http://localhost:3001/books/categories')
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories')
             .then(res => setDbCategories(res.data))
             .catch(() => {});
     }, []);
@@ -181,7 +181,7 @@ function Favorites() {
             .filter(n => n.tag === 'new_chapter' && n.unread)
             .map(n => Number(n.id.replace('newchap-', '')));
         if (token && newChapIds.length > 0) {
-            axios.post('http://localhost:3001/notifications/new-chapters/seen',
+            axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
                 { episodeIds: newChapIds },
                 { headers: { Authorization: `Bearer ${token}` } }
             ).catch(() => {});
@@ -196,7 +196,7 @@ function Favorites() {
             const token = localStorage.getItem('token');
             const episodeId = Number(id.replace('newchap-', ''));
             if (token && episodeId) {
-                axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
                     { episodeIds: [episodeId] },
                     { headers: { Authorization: `Bearer ${token}` } }
                 ).catch(() => {});
@@ -223,7 +223,7 @@ function Favorites() {
         const token = localStorage.getItem('token');
         setRemovingId(bookId);
         try {
-            await axios.post('http://localhost:3001/favorites/toggle', { bookId }, {
+            await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites/toggle', { bookId }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setFavorites(prev => prev.filter(b => b.id !== bookId));

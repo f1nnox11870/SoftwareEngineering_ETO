@@ -249,7 +249,7 @@ function SettingProfile() {
         const token = localStorage.getItem('token');
         if (!token) return;
         try {
-            const res = await axios.get('http://localhost:3001/cart', {
+            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setCartCount(res.data.length || 0);
@@ -265,16 +265,16 @@ function SettingProfile() {
         const headers = { Authorization: `Bearer ${token}` };
         const readIds = loadReadIds();   // โหลด IDs ที่เคยอ่านแล้วจาก localStorage
         const [topupRes, histRes, newChapRes] = await Promise.all([
-            axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-            axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
-            axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
         ]);
         setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds));
     };
 
     // ── Fetch DB Categories (เหมือน myshelf) ──
     useEffect(() => {
-        axios.get('http://localhost:3001/books/categories')
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories')
             .then(res => setDbCategories(res.data))
             .catch(() => {});
     }, []);
@@ -290,7 +290,7 @@ function SettingProfile() {
         fetchCartCount();
         refreshNotifications(token);
 
-        axios.get('http://localhost:3001/profile', {
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', {
             headers: { Authorization: `Bearer ${token}` }
         }).then(res => {
             setUsername(res.data.username || '');
@@ -310,7 +310,7 @@ function SettingProfile() {
             const token = localStorage.getItem('token');
             if (!token) return;
             try {
-                const res = await axios.get('http://localhost:3001/profile', {
+                const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setCoins(res.data.coins ?? 0);
@@ -348,7 +348,7 @@ function SettingProfile() {
             const base64Image = reader.result;
             const token = localStorage.getItem('token');
             try {
-                await axios.put('http://localhost:3001/profile/image',
+                await axios.put('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile/image',
                     { image: base64Image },
                     { headers: { Authorization: `Bearer ${token}` } }
                 );
@@ -373,7 +373,7 @@ function SettingProfile() {
             return showModal('warning', 'รหัสผ่านสั้นเกินไป', 'รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร');
         try {
             const token = localStorage.getItem('token');
-            await axios.put('http://localhost:3001/profile/password',
+            await axios.put('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile/password',
                 { oldPassword, newPassword },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
@@ -396,7 +396,7 @@ function SettingProfile() {
             .filter(n => n.tag === 'new_chapter' && n.unread)
             .map(n => Number(n.id.replace('newchap-', '')));
         if (token && newChapIds.length > 0) {
-            axios.post('http://localhost:3001/notifications/new-chapters/seen',
+            axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
                 { episodeIds: newChapIds },
                 { headers: { Authorization: `Bearer ${token}` } }
             ).catch(() => {});
@@ -412,7 +412,7 @@ function SettingProfile() {
             const token = localStorage.getItem('token');
             const episodeId = Number(id.replace('newchap-', ''));
             if (token && episodeId) {
-                axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
                     { episodeIds: [episodeId] },
                     { headers: { Authorization: `Bearer ${token}` } }
                 ).catch(() => {});

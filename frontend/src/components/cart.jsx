@@ -56,7 +56,7 @@ function Cart() {
         const token = localStorage.getItem('token');
         if (!token) return;
         try {
-            const res = await axios.get('http://localhost:3001/cart', { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers: { Authorization: `Bearer ${token}` } });
             console.log("ข้อมูลในตะกร้า:", res.data);
             setCartItems(res.data);
             setCartCount(res.data.length);
@@ -76,7 +76,7 @@ function Cart() {
     }, [navigate]);
 
     useEffect(() => {
-        axios.get('http://localhost:3001/books/categories').then(res => setDbCategories(res.data)).catch(() => {});
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories').then(res => setDbCategories(res.data)).catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -84,13 +84,13 @@ function Cart() {
         const token = localStorage.getItem('token');
         const fetchProfile = async () => {
             try {
-                const res = await axios.get('http://localhost:3001/profile', { headers: { Authorization: `Bearer ${token}` } });
+                const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers: { Authorization: `Bearer ${token}` } });
                 setCoins(res.data.coins ?? 0); setProfileImage(res.data.image || null);
             } catch { setCoins(0); }
         };
         fetchProfile();
         refreshNotifications(token);
-        axios.get('http://localhost:3001/favorites', { headers: { Authorization: `Bearer ${token}` } })
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', { headers: { Authorization: `Bearer ${token}` } })
             .then(res => setFavoriteIds(res.data.map(i => i.book_id))).catch(() => {});
         coinInterval.current = setInterval(fetchProfile, 30000);
         return () => clearInterval(coinInterval.current);
@@ -111,9 +111,9 @@ function Cart() {
         const readIds = loadReadIds();
         try {
             const [topupRes, histRes, newChapRes] = await Promise.all([
-                axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-                axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
-                axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+                axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+                axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
+                axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
             ]);
             const notifs = [];
             newChapRes.data.forEach(c => {
@@ -151,7 +151,7 @@ function Cart() {
         if (!window.confirm("คุณต้องการลบหนังสือเล่มนี้ใช่หรือไม่?")) return;
         const token = localStorage.getItem('token');
         try {
-            await axios.delete(`http://localhost:3001/cart/${cartItemId}`, { headers: { Authorization: `Bearer ${token}` } });
+            await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart/${cartItemId}`, { headers: { Authorization: `Bearer ${token}` } });
             fetchCart();
         } catch (err) { alert("ไม่สามารถลบสินค้าได้"); }
     };
@@ -170,7 +170,7 @@ function Cart() {
         }
         if (!window.confirm(`ยืนยันการชำระเงินจำนวน ${totalPrice.toLocaleString()} 🪙 ใช่หรือไม่?`)) return;
         try {
-            const res = await axios.post('http://localhost:3001/cart/checkout', {}, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart/checkout', {}, { headers: { Authorization: `Bearer ${token}` } });
             alert(res.data.message);
             setCoins(res.data.remainingCoins); setCartItems([]); setCartCount(0);
         } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาดในการชำระเงิน"); }

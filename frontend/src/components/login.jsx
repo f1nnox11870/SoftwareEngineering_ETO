@@ -11,7 +11,7 @@ function Login({ onClose, onSwitch, onLoginSuccess }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const response = await axios.post('http://localhost:3001/login', { username, password });
+            const response = await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/login', { username, password });
             localStorage.setItem('token', response.data.token);
             const payload = JSON.parse(atob(response.data.token.split('.')[1]));
             localStorage.setItem('role', payload.role);
@@ -28,7 +28,7 @@ function Login({ onClose, onSwitch, onLoginSuccess }) {
     };
 
     const handleGoogleLogin = () => {
-        window.location.href = 'http://localhost:3001/auth/google';
+        window.location.href = '${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/auth/google';
     };
 
     return (

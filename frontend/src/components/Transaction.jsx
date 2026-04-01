@@ -127,7 +127,7 @@ const Transaction = () => {
         if (!token) return;
         
         try {
-            const res = await axios.get('http://localhost:3001/favorites', {
+            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', {
                 headers: { Authorization: `Bearer ${token}` }
             });
             // แปลงข้อมูลให้กลายเป็น Array ของ ID ก่อนนำไปใช้
@@ -143,7 +143,7 @@ const Transaction = () => {
             const token = localStorage.getItem('token');
             if (!token) return;
             try {
-                const res = await axios.get('http://localhost:3001/profile', {
+                const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setCoins(res.data.coins ?? 0);
@@ -155,7 +155,7 @@ const Transaction = () => {
             fetchProfile();
             refreshNotifications(token);
             fetchFavoriteIds();
-            axios.get('http://localhost:3001/cart', { headers: { Authorization: `Bearer ${token}` } })
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers: { Authorization: `Bearer ${token}` } })
                 .then(res => setCartCount(res.data.length)).catch(() => {});
             coinInterval.current = setInterval(fetchProfile, 30000);
         } else {
@@ -186,7 +186,7 @@ const Transaction = () => {
             .filter(n => n.tag === 'new_chapter' && n.unread)
             .map(n => Number(n.id.replace('newchap-', '')));
         if (token && newChapIds.length > 0) {
-            axios.post('http://localhost:3001/notifications/new-chapters/seen',
+            axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
                 { episodeIds: newChapIds },
                 { headers: { Authorization: `Bearer ${token}` } }
             ).catch(() => {});
@@ -200,7 +200,7 @@ const Transaction = () => {
             const token = localStorage.getItem('token');
             const episodeId = Number(id.replace('newchap-', ''));
             if (token && episodeId) {
-                axios.post('http://localhost:3001/notifications/new-chapters/seen',
+                axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
                     { episodeIds: [episodeId] },
                     { headers: { Authorization: `Bearer ${token}` } }
                 ).catch(() => {});
@@ -215,9 +215,9 @@ const Transaction = () => {
         const headers = { Authorization: `Bearer ${token}` };
         const readIds = loadReadIds();
         const [topupRes, histRes, newChapRes] = await Promise.all([
-            axios.get('http://localhost:3001/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-            axios.get('http://localhost:3001/history', { headers }).catch(() => ({ data: [] })),
-            axios.get('http://localhost:3001/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
+            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
         ]);
         setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds));
     };
@@ -235,7 +235,7 @@ const Transaction = () => {
         try {
             const token = localStorage.getItem('token');
             if (!token) return;
-            const res = await axios.get('http://localhost:3001/topup-history', {
+            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup-history', {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setHistory(res.data);
@@ -250,7 +250,7 @@ const Transaction = () => {
 
     // ดึง subcategories จาก DB
     useEffect(() => {
-        axios.get('http://localhost:3001/books/categories')
+        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories')
             .then(res => setDbCategories(res.data))
             .catch(() => {});
     }, []);
@@ -456,14 +456,14 @@ const Transaction = () => {
                                             boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
                                         }}>
                                             <img
-                                                src={`http://localhost:3001${selectedItem.slip_image}`}
+                                                src={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${selectedItem.slip_image}`}
                                                 alt="สลิปโอนเงิน"
                                                 style={{ width: '100%', display: 'block' }}
                                                 onError={e => { e.target.style.display = 'none'; }}
                                             />
                                         </div>
                                         <a
-                                            href={`http://localhost:3001${selectedItem.slip_image}`}
+                                            href={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${selectedItem.slip_image}`}
                                             target="_blank"
                                             rel="noreferrer"
                                             style={{
