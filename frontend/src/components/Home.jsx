@@ -502,7 +502,7 @@ const fetchPosts = async () => {
         const token = localStorage.getItem("token");
         
         // ส่ง GET ขอข้อมูล โดยแนบ Token ไปใน Headers ด้วย (ถึงแม้ว่า Backend จะไม่บังคับ แต่เราส่งไปเพื่อให้รู้ userId)
-        const res = await axios.get("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/posts", {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/posts`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {}
         });
         
@@ -751,7 +751,7 @@ const handleSubmitComment = async (postId) => {
         );
         
         // 🌟 2. ดึงข้อมูลโพสต์ใหม่ (ต้องส่ง Token ไปด้วย เพื่อให้รู้ว่าเราเคยกดไลค์ไว้) 🌟
-        const res = await axios.get("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/posts", {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/posts`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {}
         });
         setNewsPosts(res.data);

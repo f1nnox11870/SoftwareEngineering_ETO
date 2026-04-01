@@ -456,14 +456,14 @@ const Transaction = () => {
                                             boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
                                         }}>
                                             <img
-                                                src={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${selectedItem.slip_image}`}
+                                                src={selectedItem.slip_image}
                                                 alt="สลิปโอนเงิน"
                                                 style={{ width: '100%', display: 'block' }}
                                                 onError={e => { e.target.style.display = 'none'; }}
                                             />
                                         </div>
                                         <a
-                                            href={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${selectedItem.slip_image}`}
+                                            href={selectedItem.slip_image}
                                             target="_blank"
                                             rel="noreferrer"
                                             style={{

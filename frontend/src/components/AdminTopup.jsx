@@ -434,10 +434,10 @@ function AdminTopup() {
                                 <div className="admin-topup-img-wrapper">
                                     <p className="admin-topup-img-caption">รูปสลิปหลักฐาน:</p>
                                     <img
-                                        src={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${req.slip_image}`}
+                                        src={req.slip_image}
                                         alt="Slip"
                                         className="admin-topup-slip"
-                                        onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${req.slip_image}`, '_blank')}
+                                        onClick={() => window.open(req.slip_image, '_blank')}
                                     />
                                 </div>
                                 <div className="admin-topup-actions">

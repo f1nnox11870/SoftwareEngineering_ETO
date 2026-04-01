@@ -36,7 +36,7 @@ function getImageUrl(path, fallback = 'https://via.placeholder.com/175x260?text=
 
     // กันเคสไม่มี /
     const clean = path.replace(/^\/+/, '');
-    return `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/${clean}`;
+    return clean.startsWith('http') ? clean : `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/${clean}`;
 }
 
 // ฟังก์ชันสร้าง Array การแจ้งเตือน
