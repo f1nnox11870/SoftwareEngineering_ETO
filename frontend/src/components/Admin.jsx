@@ -40,7 +40,8 @@ function Admin() {
   const [activeTab, setActiveTab] = useState("addBook");
   const [books, setBooks] = useState([]);
   const [title, setTitle] = useState("");
-  const [image, setImage] = useState("");
+  const [image, setImage] = useState("");       // base64 สำหรับ preview
+  const [imageFile, setImageFile] = useState(null); // File object สำหรับ upload
   const [description, setDescription] = useState("");
   const [author, setAuthor] = useState("");
   const [category, setCategory] = useState("");
@@ -163,7 +164,10 @@ function Admin() {
 
   // ================= API CALLS (เดิม) =================
   const fetchBooks = async () => {
-    try { const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books`); }
+    try { 
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books`);
+      setBooks(Array.isArray(res.data) ? res.data : []);
+    }
     catch (err) { console.error("Error fetching books:", err); }
   };
   const fetchEpisodes = async (bookId) => {
@@ -174,6 +178,7 @@ function Admin() {
   // ================= HANDLERS (เดิม) =================
   const handleFile = (file) => {
     if (file && file.type.startsWith("image/")) {
+      setImageFile(file); // เก็บ File object ไว้ upload
       const reader = new FileReader(); reader.onload = (e) => setImage(e.target.result); reader.readAsDataURL(file);
     } else { alert("กรุณาเลือกไฟล์รูปภาพเท่านั้นครับ"); }
   };
@@ -218,7 +223,6 @@ function Admin() {
     if (!category) return alert("กรุณาเลือกหมวดหมู่ด้วยครับ");
     if (!genre) return alert("กรุณาเลือกแนวหนังสือด้วยครับ");
     try {
-      // ✅ ใช้ FormData แทน JSON+Base64 เพื่อลด memory
       const formData = new FormData();
       formData.append("title", title);
       formData.append("author", author);
@@ -226,17 +230,16 @@ function Admin() {
       formData.append("genre", genre);
       formData.append("description", description);
       formData.append("price", Number(price));
-
-      // แปลง base64 preview กลับเป็น file
-      const blob = await fetch(image).then(r => r.blob());
-      formData.append("image", blob, "cover.jpg");
+      formData.append("image", imageFile); // ✅ ใช้ File object โดยตรง ไม่ต้องแปลง base64
 
       await axios.post(
         `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/add-book`,
         formData,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      alert("เพิ่มหนังสือสำเร็จ!"); setTitle(""); setImage(""); setAuthor(""); setCategory(""); setGenre(""); setDescription(""); setPrice(""); fetchBooks();
+      alert("เพิ่มหนังสือสำเร็จ!"); 
+      setTitle(""); setImage(""); setImageFile(null); setAuthor(""); setCategory(""); setGenre(""); setDescription(""); setPrice(""); 
+      fetchBooks();
     } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาด"); }
   };
   const handleAddEpisode = async (e) => {
