@@ -16,11 +16,8 @@ const port = 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_fallback_secret';
 
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'https://eto-frontend.onrender.com'
-  ],
-  credentials: true
+  origin: '*',
+  credentials: false
 }));
 app.use(express.json({ limit: '200mb' }));
 app.use(express.urlencoded({ limit: '200mb', extended: true }));
