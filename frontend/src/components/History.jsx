@@ -114,7 +114,7 @@ function History() {
         const headers = { Authorization: `Bearer ${token}` };
 
         // Profile
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers })
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile`, { headers })
             .then(res => {
                 setUsername(res.data.username);
                 setCoins(res.data.coins ?? 0);
@@ -123,26 +123,26 @@ function History() {
             .catch(() => handleLogout());
 
         // History
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers })
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history`, { headers })
             .then(res => { setHistoryData(res.data); setLoadingHistory(false); })
             .catch(err => { console.error('Error fetching history:', err); setLoadingHistory(false); });
 
         // Favorite IDs
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', { headers })
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites`, { headers })
             .then(res => setFavoriteIds(res.data.map(item => item.book_id)))
             .catch(() => {});
 
         // Cart count
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers })
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart`, { headers })
             .then(res => setCartCount(res.data.length))
             .catch(() => {});
 
         // Notifications
         const readIds = loadReadIds();
         Promise.all([
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests`, { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history`, { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters`, { headers }).catch(() => ({ data: [] })),
         ]).then(([topupRes, histRes, newChapRes]) =>
             setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds))
         );
@@ -150,7 +150,7 @@ function History() {
 
     // ── Subcategories ──
     useEffect(() => {
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories')
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories`)
             .then(res => setDbCategories(res.data))
             .catch(() => {});
     }, []);
@@ -178,7 +178,7 @@ function History() {
             .filter(n => n.tag === 'new_chapter' && n.unread)
             .map(n => Number(n.id.replace('newchap-', '')));
         if (token && newChapIds.length > 0) {
-            axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
+            axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen`,
                 { episodeIds: newChapIds },
                 { headers: { Authorization: `Bearer ${token}` } }
             ).catch(() => {});
@@ -193,7 +193,7 @@ function History() {
             const token = localStorage.getItem('token');
             const episodeId = Number(id.replace('newchap-', ''));
             if (token && episodeId) {
-                axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
+                axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen`,
                     { episodeIds: [episodeId] },
                     { headers: { Authorization: `Bearer ${token}` } }
                 ).catch(() => {});

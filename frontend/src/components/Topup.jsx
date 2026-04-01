@@ -172,7 +172,7 @@ function Topup() {
 
     // ดึง subcategories จาก DB
     useEffect(() => {
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories')
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories`)
             .then(res => setDbCategories(res.data))
             .catch(() => {});
     }, []);
@@ -181,9 +181,9 @@ function Topup() {
         const headers = { Authorization: `Bearer ${token}` };
         const readIds = loadReadIds();
         const [topupRes, histRes, newChapRes] = await Promise.all([
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests`, { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history`, { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters`, { headers }).catch(() => ({ data: [] })),
         ]);
         setNotifications(buildNotifications(histRes.data, topupRes.data, newChapRes.data, readIds));
     };
@@ -199,7 +199,7 @@ function Topup() {
         if (!token) return;
         
         try {
-            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', {
+            const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             const ids = res.data.map(item => item.book_id);
@@ -214,7 +214,7 @@ function Topup() {
             const token = localStorage.getItem('token');
             if (!token) return;
             try {
-                const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers: { Authorization: `Bearer ${token}` } });
+                const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile`, { headers: { Authorization: `Bearer ${token}` } });
                 setCoins(res.data.coins ?? 0);
                 setBalance(res.data.coins ?? 0);
                 setProfileImage(res.data.image || null);
@@ -225,7 +225,7 @@ function Topup() {
             fetchProfile();
             refreshNotifications(token);
             fetchFavoriteIds();
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers: { Authorization: `Bearer ${token}` } })
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart`, { headers: { Authorization: `Bearer ${token}` } })
                 .then(res => setCartCount(res.data.length)).catch(() => {});
             coinInterval.current = setInterval(fetchProfile, 30000);
         } else {
@@ -256,7 +256,7 @@ function Topup() {
             .filter(n => n.tag === 'new_chapter' && n.unread)
             .map(n => Number(n.id.replace('newchap-', '')));
         if (token && newChapIds.length > 0) {
-            axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
+            axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen`,
                 { episodeIds: newChapIds },
                 { headers: { Authorization: `Bearer ${token}` } }
             ).catch(() => {});
@@ -270,7 +270,7 @@ function Topup() {
             const token = localStorage.getItem('token');
             const episodeId = Number(id.replace('newchap-', ''));
             if (token && episodeId) {
-                axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen',
+                axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters/seen`,
                     { episodeIds: [episodeId] },
                     { headers: { Authorization: `Bearer ${token}` } }
                 ).catch(() => {});
@@ -348,7 +348,7 @@ function Topup() {
         fd.append('amount', qrPkg.price.replace(',', ''));
         fd.append('slip', slipFile);
 
-        await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/request', fd, {
+        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/request`, fd, {
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
         });
 

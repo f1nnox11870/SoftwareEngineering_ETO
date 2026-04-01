@@ -13,7 +13,7 @@ function Register({ onClose, onSwitch, onRegisterSuccess }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const response = await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/register', { username, email, password });
+            const response = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/register`, { username, email, password });
             setMessage(response.data.message);
             if (onRegisterSuccess) onRegisterSuccess();
             // สลับไปหน้า Login หลังสมัครสำเร็จ
@@ -24,7 +24,7 @@ function Register({ onClose, onSwitch, onRegisterSuccess }) {
     };
 
     const handleGoogleLogin = () => {
-        window.location.href = '${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/auth/google';
+        window.location.href = `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/auth/google`;
     };
 
     return (

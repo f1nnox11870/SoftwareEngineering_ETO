@@ -152,7 +152,7 @@ function AdminTopup() {
     }, [navigate]);
 
     useEffect(() => {
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories')
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories`)
             .then(res => setDbCategories(res.data)).catch(() => {});
     }, []);
 
@@ -174,7 +174,7 @@ function AdminTopup() {
 
         const fetchProfile = async () => {
             try {
-                const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers: { Authorization: `Bearer ${token}` } });
+                const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile`, { headers: { Authorization: `Bearer ${token}` } });
                 setCoins(res.data.coins ?? 0);
                 setProfileImage(res.data.image || null);
             } catch { setCoins(0); }
@@ -184,9 +184,9 @@ function AdminTopup() {
         refreshNotifications(token);
         refreshAdminNotifications(token);
 
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', { headers: { Authorization: `Bearer ${token}` } })
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites`, { headers: { Authorization: `Bearer ${token}` } })
             .then(res => setFavoriteIds(res.data.map(i => i.book_id))).catch(() => {});
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers: { Authorization: `Bearer ${token}` } })
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart`, { headers: { Authorization: `Bearer ${token}` } })
             .then(res => setCartCount(res.data.length)).catch(() => {});
 
         // Polling ทุก 30s
@@ -202,16 +202,16 @@ function AdminTopup() {
         const headers = { Authorization: `Bearer ${token}` };
         const readIds = loadReadIds();
         const [topupRes, newChapRes, userNotifRes] = await Promise.all([
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters', { headers }).catch(() => ({ data: [] })),
-            axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/user/notifications', { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests`, { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/notifications/new-chapters`, { headers }).catch(() => ({ data: [] })),
+            axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/user/notifications`, { headers }).catch(() => ({ data: [] })),
         ]);
         setNotifications(buildNotifications(topupRes.data, newChapRes.data, userNotifRes.data, readIds));
     };
 
     const refreshAdminNotifications = async (token) => {
         try {
-            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/notifications', {
+            const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/notifications`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setAdminNotifications(res.data);
@@ -225,7 +225,7 @@ function AdminTopup() {
         setNotifications(prev => prev.map(n => { if (n.unread) saveReadId(n.id); return { ...n, unread: false }; }));
         const token = localStorage.getItem('token');
         if (token) {
-            axios.put('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/user/notifications/read-all', {},
+            axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/user/notifications/read-all`, {},
                 { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
         }
         markAdminAllRead();
@@ -234,7 +234,7 @@ function AdminTopup() {
     const markAdminAllRead = async () => {
         const token = localStorage.getItem('token');
         setAdminNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
-        await axios.put('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/notifications/read-all', {},
+        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/notifications/read-all`, {},
             { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
     };
 
@@ -269,7 +269,7 @@ function AdminTopup() {
     const fetchRequests = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/topups', {
+            const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/topups`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setRequests(res.data);
