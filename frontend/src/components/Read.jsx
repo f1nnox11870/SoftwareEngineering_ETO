@@ -71,7 +71,7 @@ function Read() {
                 return;
             }
 
-            const confirmBuy = window.confirm(`ตอนนี้ติดเหรียญ 🪙\nต้องการใช้ 5 เหรียญเพื่อปลดล็อก "${ep.title}" หรือไม่?`);
+            const confirmBuy = window.confirm(`ตอนนี้ติดเหรียญ \nต้องการใช้ 10 เหรียญเพื่อปลดล็อก "${ep.title}" หรือไม่?`);
             if (confirmBuy) {
                 try {
                     const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/unlock`, {
@@ -84,7 +84,7 @@ function Read() {
 
                     // ซื้อสำเร็จ
                     setUnlockedEpisodes([...unlockedEpisodes, ep.id]);
-                    alert("ปลดล็อกสำเร็จ! ขอให้อ่านให้สนุกครับ 🎉");
+                    alert("ปลดล็อกสำเร็จ! ขอให้อ่านให้สนุกครับ ");
                     
                     // เปิดให้อ่านเลยทันที
                     setCurrentEpisode(ep);
@@ -334,7 +334,7 @@ function Read() {
                                             <div>
                                                 {locked ? (
                                                     <span style={{ background: '#fff', border: '1px solid #ffcc80', color: '#f57c00', padding: '6px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                        <i className="fas fa-lock"></i> 5 🪙
+                                                        <i className="fas fa-lock"></i> 10 เหรียญ
                                                     </span>
                                                 ) : (
                                                     <span style={{ background: '#e8f5e9', color: '#2e7d32', padding: '6px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>

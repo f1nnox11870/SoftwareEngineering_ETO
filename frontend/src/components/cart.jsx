@@ -165,10 +165,10 @@ function Cart() {
     const handleCheckout = async () => {
         const token = localStorage.getItem('token');
         if (coins < totalPrice) {
-            alert(`เหรียญไม่พอ! คุณมี ${coins} แต่ต้องใช้ ${totalPrice} 🪙\nกรุณาไปเติมเหรียญก่อนครับ`);
+            alert(`เหรียญไม่พอ! คุณมี ${coins} แต่ต้องใช้ ${totalPrice} เหรียญ\nกรุณาไปเติมเหรียญก่อนครับ`);
             navigate('/topup'); return;
         }
-        if (!window.confirm(`ยืนยันการชำระเงินจำนวน ${totalPrice.toLocaleString()} 🪙 ใช่หรือไม่?`)) return;
+        if (!window.confirm(`ยืนยันการชำระเงินจำนวน ${totalPrice.toLocaleString()} เหรียญ ใช่หรือไม่?`)) return;
         try {
             const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart/checkout`, {}, { headers: { Authorization: `Bearer ${token}` } });
             alert(res.data.message);
@@ -224,12 +224,12 @@ function Cart() {
                             <h3>สรุปยอดชำระ</h3>
                             <div className="summary-row">
                                 <span>ราคาสินค้า</span>
-                                <span>{totalPrice.toLocaleString()} 🪙</span>
+                                <span>{totalPrice.toLocaleString()} เหรียญ</span>
                             </div>
                             <div className="summary-coins-check" style={{ marginTop: '10px', padding: '10px', background: '#fff8f8', borderRadius: '8px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                                     <span>เหรียญของคุณ:</span>
-                                    <span style={{ fontWeight: 'bold' }}>{coins?.toLocaleString()} 🪙</span>
+                                    <span style={{ fontWeight: 'bold' }}>{coins?.toLocaleString()} เหรียญ</span>
                                 </div>
                                 {coins < totalPrice && (
                                     <div style={{ marginTop: '10px', textAlign: 'center' }}>
@@ -248,7 +248,7 @@ function Cart() {
                             <hr className="divider" />
                             <div className="summary-total">
                                 <span>ยอดสุทธิ</span>
-                                <span>{totalPrice.toLocaleString()} 🪙</span>
+                                <span>{totalPrice.toLocaleString()} เหรียญ</span>
                             </div>
                             <button className="btn-checkout" onClick={handleCheckout}
                                 disabled={coins < totalPrice} style={{ opacity: coins < totalPrice ? 0.6 : 1 }}>
