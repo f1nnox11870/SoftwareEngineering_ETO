@@ -21,7 +21,7 @@ cloudinary.config({
 const app = express();
 const http = require('http');
 const { Server } = require('socket.io');
-const port = 3001;
+const port = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_fallback_secret';
 
 // ✅ PostgreSQL connection
@@ -279,9 +279,9 @@ const initDb = async () => {
 };
 
 const createAdmin = async () => {
-    const username = 'AETOM_NApat@916';
-    const password = 'QWERMBMFT916';
-    const email = 'AETOM_NApat_916@example.com';
+    const username = process.env.ADMIN_USERNAME || 'AETOM_NApat@916';
+    const password = process.env.ADMIN_PASSWORD || 'QWERMBMFT916';
+    const email = process.env.ADMIN_EMAIL || 'AETOM_NApat_916@example.com';
     const hashedPassword = await bcrypt.hash(password, 10);
     const adminCoins = 999999;
     try {
