@@ -8,6 +8,15 @@ require('dotenv').config();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
+// ตั้งค่า Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key:    process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 const app = express();
 const http = require('http'); // เพิ่มบรรทัดนี้
 const { Server } = require('socket.io'); // เพิ่มบรรทัดนี้
@@ -45,28 +54,21 @@ const io = new Server(server, {
         methods: ["GET", "POST"]
     }
 });
-// ตั้งค่า Multer สำหรับ Post
-const postStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/posts'); // เก็บไว้ในโฟลเดอร์ uploads/posts
-    },
-    filename: (req, file, cb) => {
-        cb(null, 'post-' + Date.now() + path.extname(file.originalname));
-    }
+// ✅ Cloudinary Storage สำหรับ Post
+const postStorage = new CloudinaryStorage({
+    cloudinary,
+    params: { folder: 'eto-posts', allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }
 });
 const uploadPost = multer({ storage: postStorage });
 
-// ตั้งค่า Multer สำหรับรูปหน้าปกหนังสือ
-const bookCoverDir = path.join(__dirname, 'uploads', 'covers');
-if (!fs.existsSync(bookCoverDir)) fs.mkdirSync(bookCoverDir, { recursive: true });
-
-const coverStorage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/covers'),
-    filename: (req, file, cb) => cb(null, 'cover-' + Date.now() + path.extname(file.originalname))
+// ✅ Cloudinary Storage สำหรับรูปหน้าปกหนังสือ
+const coverStorage = new CloudinaryStorage({
+    cloudinary,
+    params: { folder: 'eto-covers', allowed_formats: ['jpg', 'jpeg', 'png', 'webp'] }
 });
 const uploadCover = multer({
     storage: coverStorage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // จำกัด 5MB
+    limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         if (file.mimetype.startsWith('image/')) cb(null, true);
         else cb(new Error('กรุณาอัปโหลดไฟล์รูปภาพเท่านั้น'));
@@ -321,41 +323,21 @@ const createAdmin = async () => {
 };
 
 // ── Upload Directories ──────────────────────────────────────────
-const bannerUploadDir = path.join(__dirname, 'uploads/banners');
-if (!fs.existsSync(bannerUploadDir)) {
-    fs.mkdirSync(bannerUploadDir, { recursive: true });
-    console.log('📁 Created directory: uploads/banners');
-}
-
-const slipUploadDir = path.join(__dirname, 'uploads/slips');
-if (!fs.existsSync(slipUploadDir)) {
-    fs.mkdirSync(slipUploadDir, { recursive: true });
-    console.log('📁 Created directory: uploads/slips');
-}
-
-// Multer สำหรับแบนเนอร์
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, bannerUploadDir);
-    },
-    filename: function (req, file, cb) {
-        cb(null, Date.now() + path.extname(file.originalname)); 
-    }
+// ✅ Cloudinary Storage สำหรับแบนเนอร์
+const bannerStorage = new CloudinaryStorage({
+    cloudinary,
+    params: { folder: 'eto-banners', allowed_formats: ['jpg', 'jpeg', 'png', 'webp'] }
 });
-const uploadBanner = multer({ storage: storage });
+const uploadBanner = multer({ storage: bannerStorage });
 
-// Multer สำหรับสลิปโอนเงิน
-const slipStorage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, slipUploadDir);
-    },
-    filename: function (req, file, cb) {
-        cb(null, 'slip_' + Date.now() + path.extname(file.originalname));
-    }
+// ✅ Cloudinary Storage สำหรับสลิปโอนเงิน
+const slipStorage = new CloudinaryStorage({
+    cloudinary,
+    params: { folder: 'eto-slips', allowed_formats: ['jpg', 'jpeg', 'png', 'webp'] }
 });
 const uploadSlip = multer({
     storage: slipStorage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const allowed = /jpeg|jpg|png|gif|webp/;
         const ext = allowed.test(path.extname(file.originalname).toLowerCase());
@@ -509,14 +491,12 @@ app.post('/banners/add', verifyToken, uploadBanner.single('image'), (req, res) =
         return res.status(400).json({ message: "กรุณาอัปโหลดรูปภาพ" });
     }
 
-    const imagePath = `/uploads/banners/${req.file.filename}`;
+    // ✅ Cloudinary จะคืน URL ใน req.file.path
+    const imagePath = req.file.path;
     
     const sql = `INSERT INTO banners (image, title, link) VALUES (?, ?, ?)`;
     db.run(sql, [imagePath, title, link], function (err) {
-        if (err) {
-            fs.unlinkSync(req.file.path);
-            return res.status(500).json({ message: "Database error" });
-        }
+        if (err) return res.status(500).json({ message: "Database error" });
         res.json({ id: this.lastID, image: imagePath, title, link, message: "เพิ่มแบนเนอร์สำเร็จ!" });
     });
 });
@@ -598,12 +578,12 @@ app.post('/admin/add-book', verifyToken, uploadCover.single('image'), (req, res)
 
     const { title, author, category, genre, description, price } = req.body;
 
-    // รองรับทั้ง multipart (file upload) และ JSON (base64 เดิม)
+    // ✅ Cloudinary คืน URL ใน req.file.path
     let imagePath = null;
     if (req.file) {
-        imagePath = '/uploads/covers/' + req.file.filename;
+        imagePath = req.file.path;
     } else if (req.body.image) {
-        imagePath = req.body.image; // fallback base64
+        imagePath = req.body.image;
     }
 
     const sql = `INSERT INTO books (title, author, category, genre, description, image, price, likes) 
@@ -1281,12 +1261,11 @@ app.post('/topup/request', verifyToken, uploadSlip.single('slip'), (req, res) =>
     const { package_id, coins, bonus, total_coins, amount } = req.body;
 
     if (!package_id || !coins || !total_coins || !amount) {
-        // ลบไฟล์ถ้า validation fail
-        if (req.file) fs.unlinkSync(req.file.path);
         return res.status(400).json({ message: "ข้อมูลไม่ครบถ้วน" });
     }
 
-    const slipPath = req.file ? `/uploads/slips/${req.file.filename}` : null;
+    // ✅ Cloudinary คืน URL ใน req.file.path
+    const slipPath = req.file ? req.file.path : null;
 
     const sql = `
         INSERT INTO topup_requests 
@@ -1296,7 +1275,6 @@ app.post('/topup/request', verifyToken, uploadSlip.single('slip'), (req, res) =>
 
     db.run(sql, [userId, package_id, parseInt(coins), parseInt(bonus) || 0, parseInt(total_coins), parseFloat(amount), slipPath], function(err) {
         if (err) {
-            if (req.file) fs.unlinkSync(req.file.path);
             return res.status(500).json({ message: "Database error", error: err.message });
         }
 
@@ -1483,7 +1461,8 @@ app.get('/posts', (req, res) => {
 // 2. [POST] แอดมินสร้างโพสต์ใหม่
 app.post('/admin/add-post', verifyToken, uploadPost.single('image'), (req, res) => {
     const { caption } = req.body;
-    const imageUrl = req.file ? `/uploads/posts/${req.file.filename}` : null;
+    // ✅ Cloudinary คืน URL ใน req.file.path
+    const imageUrl = req.file ? req.file.path : null;
 
     if (!caption && !imageUrl) {
         return res.status(400).json({ message: "กรุณาใส่ข้อความหรือรูปภาพอย่างน้อยหนึ่งอย่าง" });
