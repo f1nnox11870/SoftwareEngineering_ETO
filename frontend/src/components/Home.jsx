@@ -479,7 +479,7 @@ const handleToggleFavorite = async (e, book) => {
         const fetchBooks = async () => {
             try {
                 const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books`);
-                setBooks(res.data);
+                setBooks(Array.isArray(res.data) ? res.data : []);
             } catch (err) {
                 console.error("Error fetching books:", err);
             }
