@@ -895,14 +895,14 @@ const novelBooks = books
                                         {banner.link ? (
                                             <a href={banner.link} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: '100%', height: '100%' }}>
                                                 <img 
-                                                    src={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${banner.image}`} 
+                                                    src={banner.image} 
                                                     alt={banner.title || 'Banner'} 
                                                     style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} 
                                                 />
                                             </a>
                                         ) : (
                                             <img 
-                                                src={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${banner.image}`} 
+                                                src={banner.image} 
                                                 alt={banner.title || 'Banner'} 
                                                 style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} 
                                             />
@@ -1116,7 +1116,7 @@ const novelBooks = books
                             
                             {post.image_url && (
                                 <img 
-                                    src={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${post.image_url}`} 
+                                    src={post.image_url} 
                                     alt="Post" 
                                     style={{ width: '100%', borderRadius: '10px', marginTop: '10px', maxHeight: '400px', objectFit: 'cover' }} 
                                 />
