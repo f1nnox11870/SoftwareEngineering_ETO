@@ -39,7 +39,7 @@ if (!fs.existsSync(postUploadDir)) {
 const server = http.createServer(app); // สร้าง http server หุ้ม app
 const io = new Server(server, {
     cors: {
-        origin: ["http://localhost:3000", "http://localhost:5173"],
+        origin: ["http://localhost:3000", "http://localhost:5173", "https://eto-frontend.onrender.com"],
         methods: ["GET", "POST"]
     }
 });
