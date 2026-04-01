@@ -97,7 +97,7 @@ function Admin() {
     if (token) { setIsLoggedIn(true); if (user) setUsername(user); setRole(savedRole); }
   }, []);
   useEffect(() => {
-    axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories').then(res => setDbCategories(res.data)).catch(() => {});
+    axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books/categories`).then(res => setDbCategories(res.data)).catch(() => {});
   }, []);
   useEffect(() => {
     const h = (e) => {
@@ -113,15 +113,15 @@ function Admin() {
     const token = localStorage.getItem('token');
     const fetchProfile = async () => {
       try {
-        const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile', { headers: { Authorization: `Bearer ${token}` } });
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3001"}/profile`, { headers: { Authorization: `Bearer ${token}` } });
         setCoins(res.data.coins ?? 0); setProfileImage(res.data.image || null);
       } catch { setCoins(0); }
     };
     fetchProfile();
     refreshNotifications(token);
-    axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/favorites', { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3001"}/favorites`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => setFavoriteIds(res.data.map(i => i.book_id))).catch(() => {});
-    axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/cart', { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3001"}/cart`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => setCartCount(res.data.length)).catch(() => {});
     coinInterval.current = setInterval(fetchProfile, 30000);
     return () => clearInterval(coinInterval.current);
@@ -132,8 +132,8 @@ function Admin() {
     const readIds = loadReadIds();
     try {
       const [topupRes, histRes] = await Promise.all([
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/topup/my-requests', { headers }).catch(() => ({ data: [] })),
-        axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/history', { headers }).catch(() => ({ data: [] })),
+        axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3001"}/topup/my-requests`, { headers }).catch(() => ({ data: [] })),
+        axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3001"}/history`, { headers }).catch(() => ({ data: [] })),
       ]);
       const notifs = [];
       topupRes.data.forEach(t => {
@@ -189,7 +189,7 @@ function Admin() {
   
   const fetchBanners = async () => {
     const token = localStorage.getItem('token'); if (!token) return;
-    try { const res = await axios.get('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/banners'); setBanners(res.data); }
+    try { const res = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:3001"}/banners`); setBanners(res.data); }
     catch (error) { console.error("Error fetching banners:", error); }
   };
   const handleAddBanner = async (e) => {
@@ -198,7 +198,7 @@ function Admin() {
     if (!newBannerImage) { alert("กรุณาเลือกรูปภาพแบนเนอร์ครับ"); return; }
     const formData = new FormData(); formData.append('image', newBannerImage);
     try {
-      await axios.post('${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/banners/add', formData, { headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` } });
+      await axios.post(`${import.meta.env.VITE_API_URL || "http://localhost:3001"}/banners/add`, formData, { headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` } });
       alert("เพิ่มแบนเนอร์สำเร็จ!"); setNewBannerImage(null); fetchBanners();
     } catch (error) { console.error("Error adding banner:", error); alert("เกิดข้อผิดพลาดในการเพิ่มแบนเนอร์"); }
   };
