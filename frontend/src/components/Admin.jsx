@@ -267,6 +267,14 @@ function Admin() {
       alert("ลบตอนสำเร็จ"); fetchEpisodes(selectedBookId);
     } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาดในการลบ"); }
   };
+  const handleDeleteBook = async (bookId, bookTitle) => {
+    if (!window.confirm(`ลบ "${bookTitle}" ใช่ไหมครับ?\n\n⚠️ ตอนทั้งหมดในเรื่องนี้จะถูกลบด้วย`)) return;
+    const token = localStorage.getItem("token");
+    try {
+      await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/delete-book/${bookId}`, { headers: { Authorization: `Bearer ${token}` } });
+      alert("ลบหนังสือสำเร็จ!"); fetchBooks();
+    } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาดในการลบ"); }
+  };
 
   // ================= STYLES (เดิม) =================
   const dropZoneStyle = { width: "100%", height: "250px", border: isDragging ? "3px dashed #ff4e63" : "2px dashed #ccc", borderRadius: "15px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backgroundColor: isDragging ? "#fff0f1" : "#fafafa", cursor: "pointer", transition: "all 0.3s ease", overflow: "hidden", marginBottom: "20px" };
@@ -297,6 +305,9 @@ function Admin() {
           </button>
           <button style={{ padding: "10px 20px", fontSize: "16px", cursor: "pointer", background: "none", border: "none", borderBottom: activeTab === "manageEpisodes" ? "3px solid #b5651d" : "3px solid transparent", color: activeTab === "manageEpisodes" ? "#b5651d" : "#555", fontWeight: "bold", borderRadius: "0" }} onClick={() => setActiveTab("manageEpisodes")}>
             <i className="fas fa-list-ol" style={{ marginRight: "8px" }}></i> จัดการตอน (Episodes)
+          </button>
+          <button style={{ padding: "10px 20px", fontSize: "16px", cursor: "pointer", background: "none", border: "none", borderBottom: activeTab === "manageBooks" ? "3px solid #ff4e63" : "3px solid transparent", color: activeTab === "manageBooks" ? "#ff4e63" : "#555", fontWeight: "bold", borderRadius: "0" }} onClick={() => setActiveTab("manageBooks")}>
+            <i className="fas fa-trash-alt" style={{ marginRight: "8px" }}></i> จัดการหนังสือ
           </button>
         </div>
 
@@ -422,6 +433,39 @@ function Admin() {
                   </form>
                 </div>
               </>
+            )}
+          </div>
+        )}
+
+        {activeTab === "manageBooks" && (
+          <div>
+            <h3 style={{ color: "#333", marginBottom: "16px" }}>หนังสือทั้งหมด ({books.length} เรื่อง)</h3>
+            {books.length === 0 ? (
+              <p style={{ color: "#888", textAlign: "center" }}>ยังไม่มีหนังสือในระบบ</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {books.map(book => (
+                  <div key={book.id} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px", background: "#f9f9f9", border: "1px solid #eee", borderRadius: "8px" }}>
+                    <img
+                      src={book.image}
+                      alt={book.title}
+                      style={{ width: "50px", height: "70px", objectFit: "cover", borderRadius: "4px", flexShrink: 0 }}
+                      onError={(e) => { e.target.src = "https://via.placeholder.com/50x70?text=No+Img"; }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: "bold", fontSize: "15px", color: "#333", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{book.title}</div>
+                      <div style={{ fontSize: "13px", color: "#888", marginTop: "2px" }}>{book.author} • {book.category}</div>
+                      <div style={{ fontSize: "13px", color: "#b5651d", marginTop: "2px" }}>{book.price > 0 ? `${book.price} เหรียญ` : "ฟรี"}</div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteBook(book.id, book.title)}
+                      style={{ background: "#ff4d4f", color: "white", border: "none", padding: "8px 16px", borderRadius: "6px", cursor: "pointer", fontFamily: "Sarabun", fontWeight: "bold", fontSize: "14px", flexShrink: 0 }}
+                    >
+                      <i className="fas fa-trash-alt" style={{ marginRight: "6px" }}></i>ลบ
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}

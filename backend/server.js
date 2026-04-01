@@ -546,13 +546,10 @@ app.delete('/banners/:id', verifyToken, (req, res) => {
         db.run(`DELETE FROM banners WHERE id = ?`, [bannerId], (deleteErr) => {
             if (deleteErr) return res.status(500).json({ message: "Database error" });
             
-            try {
-                const filePath = `uploads/banners/${row.image.split('/banners/')[1]}`;
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                }
-            } catch (unlinkErr) {
-                console.error("Error deleting banner file:", unlinkErr);
+            // ลบรูปจาก Cloudinary ถ้า URL เป็นของ Cloudinary
+            if (row.image && row.image.includes('cloudinary.com')) {
+                const publicId = row.image.split('/').slice(-1)[0].split('.')[0];
+                cloudinary.uploader.destroy(`eto-banners/${publicId}`).catch(err => console.error('Cloudinary delete error:', err));
             }
             
             res.json({ message: "ลบแบนเนอร์สำเร็จ!" });
@@ -1488,9 +1485,10 @@ app.delete('/admin/delete-post/:id', verifyToken, (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
 
         if (row && row.image_url) {
-            const imagePath = path.join(__dirname, row.image_url);
-            if (fs.existsSync(imagePath)) {
-                fs.unlinkSync(imagePath); 
+            // ลบรูปจาก Cloudinary ถ้า URL เป็นของ Cloudinary
+            if (row.image_url.includes('cloudinary.com')) {
+                const publicId = row.image_url.split('/').slice(-1)[0].split('.')[0];
+                cloudinary.uploader.destroy(`eto-posts/${publicId}`).catch(err => console.error('Cloudinary delete error:', err));
             }
         }
 
