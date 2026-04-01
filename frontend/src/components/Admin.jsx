@@ -163,7 +163,7 @@ function Admin() {
 
   // ================= API CALLS (เดิม) =================
   const fetchBooks = async () => {
-    try { const res = await axios.get("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books"); setBooks(res.data); }
+    try { const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/books`); }
     catch (err) { console.error("Error fetching books:", err); }
   };
   const fetchEpisodes = async (bookId) => {
@@ -218,7 +218,7 @@ function Admin() {
     if (!category) return alert("กรุณาเลือกหมวดหมู่ด้วยครับ");
     if (!genre) return alert("กรุณาเลือกแนวหนังสือด้วยครับ");
     try {
-      await axios.post("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/add-book", { title, author, category: genre, description, image, price: Number(price) }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/add-book`, { title, author, category: genre, description, image, price: Number(price) }, { headers: { Authorization: `Bearer ${token}` } });
       alert("เพิ่มหนังสือสำเร็จ!"); setTitle(""); setImage(""); setAuthor(""); setCategory(""); setGenre(""); setDescription(""); setPrice(""); fetchBooks();
     } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาด"); }
   };
@@ -235,7 +235,7 @@ function Admin() {
       payloadContent = epContent;
     }
     try {
-      await axios.post("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/add-episode", { book_id: selectedBookId, episode_number: epNumber, title: epTitle, content: payloadContent }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/add-episode`, { book_id: selectedBookId, episode_number: epNumber, title: epTitle, content: payloadContent }, { headers: { Authorization: `Bearer ${token}` } });
       alert("เพิ่มตอนใหม่สำเร็จ!"); setEpNumber(""); setEpTitle(""); setEpContent(""); setEpImages([]); fetchEpisodes(selectedBookId);
     } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาด"); }
   };
