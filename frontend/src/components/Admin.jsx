@@ -218,7 +218,24 @@ function Admin() {
     if (!category) return alert("กรุณาเลือกหมวดหมู่ด้วยครับ");
     if (!genre) return alert("กรุณาเลือกแนวหนังสือด้วยครับ");
     try {
-      await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/add-book`, { title, author, category: genre, description, image, price: Number(price) }, { headers: { Authorization: `Bearer ${token}` } });
+      // ✅ ใช้ FormData แทน JSON+Base64 เพื่อลด memory
+      const formData = new FormData();
+      formData.append("title", title);
+      formData.append("author", author);
+      formData.append("category", genre);
+      formData.append("genre", genre);
+      formData.append("description", description);
+      formData.append("price", Number(price));
+
+      // แปลง base64 preview กลับเป็น file
+      const blob = await fetch(image).then(r => r.blob());
+      formData.append("image", blob, "cover.jpg");
+
+      await axios.post(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/admin/add-book`,
+        formData,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       alert("เพิ่มหนังสือสำเร็จ!"); setTitle(""); setImage(""); setAuthor(""); setCategory(""); setGenre(""); setDescription(""); setPrice(""); fetchBooks();
     } catch (err) { alert(err.response?.data?.message || "เกิดข้อผิดพลาด"); }
   };

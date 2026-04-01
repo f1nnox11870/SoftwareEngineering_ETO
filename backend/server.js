@@ -1,4 +1,3 @@
-
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
@@ -56,6 +55,23 @@ const postStorage = multer.diskStorage({
     }
 });
 const uploadPost = multer({ storage: postStorage });
+
+// ตั้งค่า Multer สำหรับรูปหน้าปกหนังสือ
+const bookCoverDir = path.join(__dirname, 'uploads', 'covers');
+if (!fs.existsSync(bookCoverDir)) fs.mkdirSync(bookCoverDir, { recursive: true });
+
+const coverStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, 'uploads/covers'),
+    filename: (req, file, cb) => cb(null, 'cover-' + Date.now() + path.extname(file.originalname))
+});
+const uploadCover = multer({
+    storage: coverStorage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // จำกัด 5MB
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) cb(null, true);
+        else cb(new Error('กรุณาอัปโหลดไฟล์รูปภาพเท่านั้น'));
+    }
+});
 // Middleware สำหรับตรวจสอบ JWT Token
 // --- ส่วนของ LOGIN (ตัวอย่าง) ---
 // jwt.sign({ id: user.id }, 'ค่านี้ต้องตรงกัน', ...)
@@ -575,17 +591,25 @@ app.delete('/cart/:id', verifyToken, (req, res) => {
     });
 });
 
-app.post('/admin/add-book', verifyToken, (req, res) => {
-    const { title, author, category, genre, description, image, price } = req.body; 
-
+app.post('/admin/add-book', verifyToken, uploadCover.single('image'), (req, res) => {
     if (req.user.role !== 'admin') {
         return res.status(403).json({ message: "Forbidden: Admin only" });
+    }
+
+    const { title, author, category, genre, description, price } = req.body;
+
+    // รองรับทั้ง multipart (file upload) และ JSON (base64 เดิม)
+    let imagePath = null;
+    if (req.file) {
+        imagePath = '/uploads/covers/' + req.file.filename;
+    } else if (req.body.image) {
+        imagePath = req.body.image; // fallback base64
     }
 
     const sql = `INSERT INTO books (title, author, category, genre, description, image, price, likes) 
                  VALUES (?, ?, ?, ?, ?, ?, ?, 0)`;
     
-    db.run(sql, [title, author, category, genre || null, description, image, price || 0], function(err) {
+    db.run(sql, [title, author, category, genre || null, description, imagePath, price || 0], function(err) {
         if (err) {
             console.error("Database error:", err.message);
             return res.status(500).json({ message: 'Database error', error: err.message });
