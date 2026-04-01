@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
@@ -17,11 +17,21 @@ cloudinary.config({
     api_key:    process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
 const app = express();
-const http = require('http'); // เพิ่มบรรทัดนี้
-const { Server } = require('socket.io'); // เพิ่มบรรทัดนี้
+const http = require('http');
+const { Server } = require('socket.io');
 const port = 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_fallback_secret';
+
+// ✅ PostgreSQL connection
+const db = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
+
+// helper แทน db.run / db.get / db.all ของ SQLite
+const query = (sql, params) => db.query(sql, params);
 
 app.use(cors({
   origin: [
@@ -29,39 +39,28 @@ app.use(cors({
     'http://localhost:5173',
     'https://eto-frontend.onrender.com'
   ],
-  credentials: true,         // รองรับ Authorization header ด้วย
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(express.json({ limit: '200mb' }));
-app.use(express.urlencoded({ limit: '200mb', extended: true }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-const db = new sqlite3.Database('./users.db', (err) => {
-    if (err) {
-        console.error(err.message);
-    } else {
-        console.log('✅ Connected to the users database.');
-    }
-});
-const postUploadDir = path.join(__dirname, 'uploads', 'posts');
-if (!fs.existsSync(postUploadDir)) {
-    fs.mkdirSync(postUploadDir, { recursive: true });
-}
-const server = http.createServer(app); // สร้าง http server หุ้ม app
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
         origin: ["http://localhost:3000", "http://localhost:5173", "https://eto-frontend.onrender.com"],
         methods: ["GET", "POST"]
     }
 });
-// ✅ Cloudinary Storage สำหรับ Post
+
+// ✅ Cloudinary Storage
 const postStorage = new CloudinaryStorage({
     cloudinary,
     params: { folder: 'eto-posts', allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }
 });
 const uploadPost = multer({ storage: postStorage });
 
-// ✅ Cloudinary Storage สำหรับรูปหน้าปกหนังสือ
 const coverStorage = new CloudinaryStorage({
     cloudinary,
     params: { folder: 'eto-covers', allowed_formats: ['jpg', 'jpeg', 'png', 'webp'] }
@@ -74,263 +73,13 @@ const uploadCover = multer({
         else cb(new Error('กรุณาอัปโหลดไฟล์รูปภาพเท่านั้น'));
     }
 });
-// Middleware สำหรับตรวจสอบ JWT Token
-// --- ส่วนของ LOGIN (ตัวอย่าง) ---
-// jwt.sign({ id: user.id }, 'ค่านี้ต้องตรงกัน', ...)
 
-// --- ส่วนของ Middleware (แก้ไขให้ตรงกัน) ---
-// ตัวอย่าง: ถ้าตอน Login คุณเขียนแบบนี้
-// jwt.sign({ id: user.id }, 'MySecret123', { expiresIn: '1d' });
-
-// ใน authenticateToken ก็ต้องเป็นแบบนี้
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) return res.status(401).json({ message: "Unauthenticated" });
-
-    // 💡 ใช้ค่าจากไฟล์ .env ที่คุณตั้งไว้ (my_super_secret_key)
-    jwt.verify(token, process.env.JWT_SECRET, (err, user) => { 
-        if (err) {
-            console.log("JWT Error Details:", err.message); // ถ้ายังขึ้น invalid signature ให้เช็คบรรทัดด้านล่าง
-            return res.status(403).json({ message: "Forbidden" });
-        }
-        req.user = user;
-        next();
-    });
-};
-//ตารางเก็บประวัติการอ่าน
-db.run(`CREATE TABLE IF NOT EXISTS reading_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    book_id INTEGER NOT NULL,
-    max_episode_number INTEGER NOT NULL DEFAULT 0,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, book_id)
-)`);
-// ================= DATABASE SETUP =================
-db.run(`CREATE TABLE IF NOT EXISTS post_likes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    post_id INTEGER,
-    user_id INTEGER,
-    type TEXT, -- 'like' หรือ 'dislike'
-    UNIQUE(post_id, user_id) -- บังคับให้ 1 คน กดได้แค่ 1 ครั้งต่อ 1 โพสต์
-)`);
-// 📚 books table
-db.run(`CREATE TABLE IF NOT EXISTS books (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT,
-    author TEXT,
-    category TEXT,
-    genre TEXT,
-    description TEXT,
-    image TEXT,
-    price REAL DEFAULT 0,
-    likes INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`, () => {
-    // Migration: เพิ่ม column genre สำหรับ DB เดิมที่ยังไม่มี
-    db.run(`ALTER TABLE books ADD COLUMN genre TEXT`, (err) => {
-        if (!err) console.log("✅ Added 'genre' column to books table.");
-    });
-    // Migration: เพิ่ม column episode_count สำหรับ performance
-    db.run(`ALTER TABLE books ADD COLUMN episode_count INTEGER DEFAULT 0`, (err) => {
-        if (!err) console.log("✅ Added 'episode_count' column to books table.");
-    });
-});
-
-// 📖 episodes table
-db.run(`CREATE TABLE IF NOT EXISTS episodes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    book_id INTEGER,
-    episode_number INTEGER,
-    title TEXT,
-    content TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (book_id) REFERENCES books(id)
-)`);
-// 🔓 unlocked_episodes table
-db.run(`CREATE TABLE IF NOT EXISTS unlocked_episodes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    book_id INTEGER,
-    episode_id INTEGER,
-    unlocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, episode_id)
-)`);
-// 👤 users table
-db.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    email TEXT UNIQUE,
-    password TEXT,
-    role TEXT DEFAULT 'user',
-    image TEXT,
-    coins INTEGER DEFAULT 0
-    
-)`, async (err) => {
-    if (err) {
-        console.error(err.message);
-    } else {
-        db.run(`ALTER TABLE users ADD COLUMN coins INTEGER DEFAULT 0`, (err) => {
-            if (!err) console.log("✅ Added 'coins' column to existing users table.");
-        });
-        console.log('✅ Users table ready');
-        await createAdmin();
-    }
-});
-
-// 🛒 cart_items table
-db.run(`CREATE TABLE IF NOT EXISTS cart_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    book_id INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (book_id) REFERENCES books(id)
-)`, (err) => {
-    if (err) {
-        console.error("Error creating cart_items table:", err.message);
-    } else {
-        console.log("✅ cart_items table ready.");
-    }
-});
-
-// ❤️ favorites table
-db.run(`CREATE TABLE IF NOT EXISTS favorites (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    book_id INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, book_id),
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (book_id) REFERENCES books(id)
-)`, (err) => {
-    if (err) {
-        console.error("Error creating favorites table:", err.message);
-    } else {
-        console.log("✅ favorites table ready.");
-    }
-});
-
-// 📚 purchased_books table
-db.run(`CREATE TABLE IF NOT EXISTS purchased_books (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    book_id INTEGER,
-    purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, book_id) 
-)`, (err) => {
-    if (err) console.error("Error creating purchased_books table:", err);
-    else console.log("✅ Table 'purchased_books' is ready.");
-});
-
-// 🧾 purchase_history table
-db.run(`CREATE TABLE IF NOT EXISTS purchase_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    title TEXT,
-    type TEXT,
-    price INTEGER,
-    purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-)`, (err) => {
-    if (err) console.error("Error creating purchase_history table:", err);
-    else console.log("✅ Table 'purchase_history' is ready.");
-});
-
-// 🛠️ banners table
-db.run(`CREATE TABLE IF NOT EXISTS banners (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    image TEXT NOT NULL,
-    title TEXT,
-    link TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`);
-
-// 💰 topup_requests table — เก็บคำขอเติมเหรียญพร้อมสลิป
-db.run(`CREATE TABLE IF NOT EXISTS topup_requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    package_id TEXT NOT NULL,
-    coins INTEGER NOT NULL,
-    bonus INTEGER DEFAULT 0,
-    total_coins INTEGER NOT NULL,
-    amount REAL NOT NULL,
-    slip_image TEXT,
-    status TEXT DEFAULT 'pending',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    approved_at DATETIME,
-    approved_by INTEGER,
-    note TEXT,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-)`, (err) => {
-    if (err) console.error("Error creating topup_requests table:", err);
-    else console.log("✅ Table 'topup_requests' is ready.");
-});
-
-// 🔔 admin_notifications — แจ้งเตือน admin เมื่อ user ส่งสลิป
-db.run(`CREATE TABLE IF NOT EXISTS admin_notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL,
-    title TEXT NOT NULL,
-    message TEXT,
-    ref_id INTEGER,
-    is_read INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`, (err) => {
-    if (!err) console.log("✅ Table 'admin_notifications' is ready.");
-});
-
-// 🔔 user_notifications — แจ้งเตือน user เมื่อ admin approve/reject
-db.run(`CREATE TABLE IF NOT EXISTS user_notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    type TEXT NOT NULL,
-    title TEXT NOT NULL,
-    message TEXT,
-    ref_id INTEGER,
-    is_read INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-)`, (err) => {
-    if (!err) console.log("✅ Table 'user_notifications' is ready.");
-});
-
-// สร้าง admin
-const createAdmin = async () => {
-    const username = 'AETOM_NApat@916';
-    const password = 'QWERMBMFT916';
-    const email = 'AETOM_NApat_916@example.com';
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const adminCoins = 999999; 
-
-    db.run(
-        `INSERT OR IGNORE INTO users (username, email, password, role, coins) VALUES (?, ?, ?, ?, ?)`,
-        [username, email, hashedPassword, 'admin', adminCoins],
-        function (err) {
-            if (err) {
-                console.error(err.message);
-            } else {
-                console.log('✅ Admin ready');
-                db.run(`UPDATE users SET coins = ? WHERE username = ?`, [adminCoins, username], (updateErr) => {
-                    if (updateErr) console.error("Error updating admin coins:", updateErr.message);
-                    else console.log(`🪙 Admin coins updated to ${adminCoins}`);
-                });
-            }
-        }
-    );
-};
-
-// ── Upload Directories ──────────────────────────────────────────
-// ✅ Cloudinary Storage สำหรับแบนเนอร์
 const bannerStorage = new CloudinaryStorage({
     cloudinary,
     params: { folder: 'eto-banners', allowed_formats: ['jpg', 'jpeg', 'png', 'webp'] }
 });
 const uploadBanner = multer({ storage: bannerStorage });
 
-// ✅ Cloudinary Storage สำหรับสลิปโอนเงิน
 const slipStorage = new CloudinaryStorage({
     cloudinary,
     params: { folder: 'eto-slips', allowed_formats: ['jpg', 'jpeg', 'png', 'webp'] }
@@ -340,1473 +89,940 @@ const uploadSlip = multer({
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const allowed = /jpeg|jpg|png|gif|webp/;
-        const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-        const mime = allowed.test(file.mimetype);
-        if (ext && mime) cb(null, true);
+        if (allowed.test(file.mimetype)) cb(null, true);
         else cb(new Error('อนุญาตเฉพาะไฟล์รูปภาพเท่านั้น'));
     }
 });
 
 // ================= MIDDLEWARE =================
-
-const verifyToken = (req, res, next) => {
+const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; 
-
-    if (!token) {
-        return res.status(401).json({ message: "กรุณาเข้าสู่ระบบ (Token required)" });
-    }
-
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) {
-            return res.status(403).json({ message: "Session หมดอายุ หรือ Token ไม่ถูกต้อง" });
-        }
-        req.user = user; 
-        next(); 
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ message: "Unauthenticated" });
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ message: "Forbidden" });
+        req.user = user;
+        next();
     });
 };
 
+const verifyToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ message: "กรุณาเข้าสู่ระบบ (Token required)" });
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ message: "Session หมดอายุ หรือ Token ไม่ถูกต้อง" });
+        req.user = user;
+        next();
+    });
+};
+
+// ================= DATABASE SETUP =================
+const initDb = async () => {
+    await query(`CREATE TABLE IF NOT EXISTS reading_history (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        book_id INTEGER NOT NULL,
+        max_episode_number INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, book_id)
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS post_likes (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER,
+        user_id INTEGER,
+        type TEXT,
+        UNIQUE(post_id, user_id)
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS books (
+        id SERIAL PRIMARY KEY,
+        title TEXT,
+        author TEXT,
+        category TEXT,
+        genre TEXT,
+        description TEXT,
+        image TEXT,
+        price REAL DEFAULT 0,
+        likes INTEGER DEFAULT 0,
+        episode_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS episodes (
+        id SERIAL PRIMARY KEY,
+        book_id INTEGER,
+        episode_number INTEGER,
+        title TEXT,
+        content TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (book_id) REFERENCES books(id)
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS unlocked_episodes (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        book_id INTEGER,
+        episode_id INTEGER,
+        unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, episode_id)
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE,
+        email TEXT UNIQUE,
+        password TEXT,
+        role TEXT DEFAULT 'user',
+        image TEXT,
+        coins INTEGER DEFAULT 0
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS cart_items (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        book_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS favorites (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        book_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, book_id)
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS purchased_books (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        book_id INTEGER,
+        purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, book_id)
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS purchase_history (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        title TEXT,
+        type TEXT,
+        price INTEGER,
+        purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS banners (
+        id SERIAL PRIMARY KEY,
+        image TEXT NOT NULL,
+        title TEXT,
+        link TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS topup_requests (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        package_id TEXT NOT NULL,
+        coins INTEGER NOT NULL,
+        bonus INTEGER DEFAULT 0,
+        total_coins INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        slip_image TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        approved_at TIMESTAMP,
+        approved_by INTEGER,
+        note TEXT
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS admin_notifications (
+        id SERIAL PRIMARY KEY,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT,
+        ref_id INTEGER,
+        is_read INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS user_notifications (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT,
+        ref_id INTEGER,
+        is_read INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS posts (
+        id SERIAL PRIMARY KEY,
+        caption TEXT,
+        image_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS comments (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER,
+        user_id INTEGER,
+        content TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (post_id) REFERENCES posts(id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS seen_chapter_notifs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        episode_id INTEGER NOT NULL,
+        seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, episode_id)
+    )`);
+    await query(`CREATE TABLE IF NOT EXISTS history (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        book_id INTEGER,
+        title TEXT,
+        type TEXT,
+        amount INTEGER,
+        purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    console.log('✅ All tables ready');
+    await createAdmin();
+};
+
+const createAdmin = async () => {
+    const username = 'AETOM_NApat@916';
+    const password = 'QWERMBMFT916';
+    const email = 'AETOM_NApat_916@example.com';
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const adminCoins = 999999;
+    try {
+        await query(
+            `INSERT INTO users (username, email, password, role, coins) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO UPDATE SET coins = $5`,
+            [username, email, hashedPassword, 'admin', adminCoins]
+        );
+        console.log('✅ Admin ready');
+    } catch (err) {
+        console.error('Admin create error:', err.message);
+    }
+};
 
 // ================= API ENDPOINTS =================
 
-// 📝 Register ENDPOINT
+// 📝 Register
 app.post('/register', async (req, res) => {
-    const { username, email, password } = req.body; 
-    
-    if (!username || !email || !password) {
+    const { username, email, password } = req.body;
+    if (!username || !email || !password)
         return res.status(400).json({ message: 'Username, Email และ Password ขาดหายไป' });
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const result = await query(
+            'INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id',
+            [username, email, hashedPassword]
+        );
+        res.status(201).json({ message: 'User registered successfully', userId: result.rows[0].id });
+    } catch (err) {
+        if (err.message.includes('unique') || err.message.includes('duplicate'))
+            return res.status(409).json({ message: 'ชื่อผู้ใช้งาน หรือ อีเมล นี้ถูกสมัครไปแล้ว' });
+        res.status(500).json({ message: 'Database error' });
     }
-    
-    const hashedPassword = await bcrypt.hash(password, 10);
-    
-    const sql = 'INSERT INTO users (username, email, password) VALUES (?, ?, ?)';
-    
-    db.run(sql, [username, email, hashedPassword], function (err) {
-        if (err) {
-            if(err.message.includes('UNIQUE')) {
-                return res.status(409).json({ message: 'ชื่อผู้ใช้งาน หรือ อีเมล นี้ถูกสมัครไปแล้ว' });
-            }
-            return res.status(500).json({ message: 'Database error' });
-        }
-        res.status(201).json({ message: 'User registered successfully', userId: this.lastID });
-    });
 });
 
-// 🔑 Login endpoint
-app.post('/login', (req, res) => {
-    const { username, password } = req.body; 
-    
-    const sql = 'SELECT * FROM users WHERE username = ? OR email = ?';
-
-    db.get(sql, [username, username], async (err, user) => {
-        if (err) {
-            return res.status(500).json({ message: 'Server error' });
-        }
-        if (!user) {
-            return res.status(404).json({ message: 'ไม่พบชื่อผู้ใช้งานหรืออีเมลนี้' });
-        }
-
+// 🔑 Login
+app.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const result = await query('SELECT * FROM users WHERE username = $1 OR email = $1', [username]);
+        const user = result.rows[0];
+        if (!user) return res.status(404).json({ message: 'ไม่พบชื่อผู้ใช้งานหรืออีเมลนี้' });
         const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(401).json({ message: 'รหัสผ่านไม่ถูกต้อง' });
-        }
-        
-        const token = jwt.sign({ id: user.id , username: user.username , role: user.role }, JWT_SECRET, { expiresIn: '1h' });
+        if (!isMatch) return res.status(401).json({ message: 'รหัสผ่านไม่ถูกต้อง' });
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '1h' });
         res.json({ message: 'Login successful', token, username: user.username });
-    });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error' });
+    }
 });
 
-// 🔓 กดซื้อตอน
-app.post('/unlock', verifyToken, (req, res) => {
+// 🔓 ปลดล็อกตอน
+app.post('/unlock', verifyToken, async (req, res) => {
     const userId = req.user.id;
-    const { bookId, episodeId, coinCost } = req.body; 
-
-    db.get(`SELECT coins FROM users WHERE id = ?`, [userId], (err, user) => {
-        if (err || !user) return res.status(500).json({ message: "Error fetching user" });
-        
-        if (user.coins < coinCost) {
+    const { bookId, episodeId, coinCost } = req.body;
+    try {
+        const userRes = await query('SELECT coins FROM users WHERE id = $1', [userId]);
+        const user = userRes.rows[0];
+        if (!user || user.coins < coinCost)
             return res.status(400).json({ message: "เหรียญไม่พอ กรุณาเติมเหรียญก่อนครับ 🪙" });
-        }
-
-        db.run(`UPDATE users SET coins = coins - ? WHERE id = ?`, [coinCost, userId], function(err) {
-            if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการหักเหรียญ" });
-
-            db.run(`INSERT OR IGNORE INTO unlocked_episodes (user_id, book_id, episode_id) VALUES (?, ?, ?)`, 
-            [userId, bookId, episodeId], function(err) {
-                if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการบันทึกตอน" });
-                
-                db.get(`SELECT b.title as book_title, e.title as ep_title FROM books b JOIN episodes e ON b.id = e.book_id WHERE b.id = ? AND e.id = ?`, 
-                [bookId, episodeId], (err, row) => {
-                    const historyTitle = row ? `${row.book_title} - ${row.ep_title}` : `ปลดล็อกตอน ID: ${episodeId}`;
-                    
-                    db.run(`INSERT INTO purchase_history (user_id, title, type, price) VALUES (?, ?, ?, ?)`, 
-                    [userId, historyTitle, 'episode', coinCost], (err) => {
-                        if (err) console.error("History log error:", err);
-                        res.json({ message: "ปลดล็อกสำเร็จ!", remainingCoins: user.coins - coinCost });
-                    });
-                });
-            });
-        });
-    });
+        await query('UPDATE users SET coins = coins - $1 WHERE id = $2', [coinCost, userId]);
+        await query('INSERT INTO unlocked_episodes (user_id, book_id, episode_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [userId, bookId, episodeId]);
+        const bookRes = await query('SELECT b.title as book_title, e.title as ep_title FROM books b JOIN episodes e ON b.id = e.book_id WHERE b.id = $1 AND e.id = $2', [bookId, episodeId]);
+        const historyTitle = bookRes.rows[0] ? `${bookRes.rows[0].book_title} - ${bookRes.rows[0].ep_title}` : `ปลดล็อกตอน ID: ${episodeId}`;
+        await query('INSERT INTO purchase_history (user_id, title, type, price) VALUES ($1, $2, $3, $4)', [userId, historyTitle, 'episode', coinCost]);
+        res.json({ message: "ปลดล็อกสำเร็จ!", remainingCoins: user.coins - coinCost });
+    } catch (err) {
+        res.status(500).json({ message: "Error", error: err.message });
+    }
 });
-// 💰 [ADMIN] ดึงรายการเติมเงินที่รอตรวจสอบ (สถานะ pending)
-app.get('/admin/topups', verifyToken, (req, res) => {
+
+// 💰 [ADMIN] ดึงรายการเติมเงิน pending
+app.get('/admin/topups', verifyToken, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
-
-    const sql = `
-        SELECT t.id, t.user_id, u.username, t.package_id, t.coins, t.amount, t.slip_image, t.status,
-               t.created_at || 'Z' as created_at
-        FROM topup_requests t
-        JOIN users u ON t.user_id = u.id
-        WHERE t.status = 'pending'
-        ORDER BY t.created_at ASC
-    `;
-    db.all(sql, [], (err, rows) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json(rows);
-    });
-});
-app.get('/purchased', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    db.all(`SELECT book_id FROM purchased_books WHERE user_id = ?`, [userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        const purchasedIds = rows.map(row => row.book_id);
-        res.json(purchasedIds);
-    });
+    try {
+        const result = await query(`
+            SELECT t.id, t.user_id, u.username, t.package_id, t.coins, t.amount, t.slip_image, t.status, t.created_at
+            FROM topup_requests t JOIN users u ON t.user_id = u.id
+            WHERE t.status = 'pending' ORDER BY t.created_at ASC
+        `);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-app.get('/banners', (req, res) => {
-    db.all(`SELECT * FROM banners ORDER BY created_at DESC`, [], (err, rows) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json(rows);
-    });
+app.get('/purchased', verifyToken, async (req, res) => {
+    try {
+        const result = await query('SELECT book_id FROM purchased_books WHERE user_id = $1', [req.user.id]);
+        res.json(result.rows.map(r => r.book_id));
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-app.post('/banners/add', verifyToken, uploadBanner.single('image'), (req, res) => {
+// 🎨 Banners
+app.get('/banners', async (req, res) => {
+    try {
+        const result = await query('SELECT * FROM banners ORDER BY created_at DESC');
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
+});
+
+app.post('/banners/add', verifyToken, uploadBanner.single('image'), async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
-    
+    if (!req.file) return res.status(400).json({ message: "กรุณาอัปโหลดรูปภาพ" });
     const { title, link } = req.body;
-    
-    if (!req.file) {
-        return res.status(400).json({ message: "กรุณาอัปโหลดรูปภาพ" });
-    }
-
-    // ✅ Cloudinary จะคืน URL ใน req.file.path
     const imagePath = req.file.path;
-    
-    const sql = `INSERT INTO banners (image, title, link) VALUES (?, ?, ?)`;
-    db.run(sql, [imagePath, title, link], function (err) {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json({ id: this.lastID, image: imagePath, title, link, message: "เพิ่มแบนเนอร์สำเร็จ!" });
-    });
+    try {
+        const result = await query('INSERT INTO banners (image, title, link) VALUES ($1, $2, $3) RETURNING id', [imagePath, title, link]);
+        res.json({ id: result.rows[0].id, image: imagePath, title, link, message: "เพิ่มแบนเนอร์สำเร็จ!" });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-app.get('/cart', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    const sql = `
-        SELECT ci.id AS cart_item_id, b.id AS book_id, b.title, b.image, b.price, b.author
-        FROM cart_items ci
-        JOIN books b ON ci.book_id = b.id
-        WHERE ci.user_id = ?`;
-
-    db.all(sql, [userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json(rows);
-    });
-});
-
-app.post('/cart/add', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    const bookId = req.body.book_id || req.body.bookId;
-
-    const checkSql = "SELECT * FROM cart_items WHERE user_id = ? AND book_id = ?";
-    db.get(checkSql, [userId, bookId], (err, row) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        
-        if (row) {
-            return res.status(400).json({ message: "หนังสือเล่มนี้อยู่ในตะกร้าแล้ว" });
-        }
-
-        const insertSql = "INSERT INTO cart_items (user_id, book_id) VALUES (?, ?)";
-        db.run(insertSql, [userId, bookId], function(err) {
-            if (err) return res.status(500).json({ message: "Error adding to cart" });
-            res.status(201).json({ message: "เพิ่มลงตะกร้าเรียบร้อย" });
-        });
-    });
-});
-
-app.delete('/banners/:id', verifyToken, (req, res) => {
+app.delete('/banners/:id', verifyToken, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
-    const bannerId = req.params.id;
-
-    db.get(`SELECT image FROM banners WHERE id = ?`, [bannerId], (err, row) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        if (!row) return res.status(404).json({ message: "Banner not found" });
-
-        db.run(`DELETE FROM banners WHERE id = ?`, [bannerId], (deleteErr) => {
-            if (deleteErr) return res.status(500).json({ message: "Database error" });
-            
-            // ลบรูปจาก Cloudinary ถ้า URL เป็นของ Cloudinary
-            if (row.image && row.image.includes('cloudinary.com')) {
-                const publicId = row.image.split('/').slice(-1)[0].split('.')[0];
-                cloudinary.uploader.destroy(`eto-banners/${publicId}`).catch(err => console.error('Cloudinary delete error:', err));
-            }
-            
-            res.json({ message: "ลบแบนเนอร์สำเร็จ!" });
-        });
-    });
-});
-
-app.delete('/cart/:id', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    const cartItemId = req.params.id;
-
-    const sql = "DELETE FROM cart_items WHERE id = ? AND user_id = ?";
-    db.run(sql, [cartItemId, userId], function(err) {
-        if (err) return res.status(500).json({ message: "Error deleting item" });
-        res.json({ message: "ลบสินค้าเรียบร้อยแล้ว" });
-    });
-});
-
-app.post('/admin/add-book', verifyToken, uploadCover.single('image'), (req, res) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: "Forbidden: Admin only" });
-    }
-
-    const { title, author, category, genre, description, price } = req.body;
-
-    // ✅ Cloudinary คืน URL ใน req.file.path
-    let imagePath = null;
-    if (req.file) {
-        imagePath = req.file.path;
-    } else if (req.body.image) {
-        imagePath = req.body.image;
-    }
-
-    const sql = `INSERT INTO books (title, author, category, genre, description, image, price, likes) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 0)`;
-    
-    db.run(sql, [title, author, category, genre || null, description, imagePath, price || 0], function(err) {
-        if (err) {
-            console.error("Database error:", err.message);
-            return res.status(500).json({ message: 'Database error', error: err.message });
+    try {
+        const result = await query('SELECT image FROM banners WHERE id = $1', [req.params.id]);
+        if (!result.rows[0]) return res.status(404).json({ message: "Banner not found" });
+        await query('DELETE FROM banners WHERE id = $1', [req.params.id]);
+        const img = result.rows[0].image;
+        if (img && img.includes('cloudinary.com')) {
+            const publicId = img.split('/').slice(-1)[0].split('.')[0];
+            cloudinary.uploader.destroy(`eto-banners/${publicId}`).catch(() => {});
         }
-        res.status(201).json({ 
-            message: 'Book added successfully', 
-            bookId: this.lastID 
-        });
-    });
+        res.json({ message: "ลบแบนเนอร์สำเร็จ!" });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-// ── [PUT] admin แก้ไขข้อมูลหนังสือ ──────────────────────────────────────────
-app.put('/admin/update-book/:id', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden: Admin only" });
+// 🛒 Cart
+app.get('/cart', verifyToken, async (req, res) => {
+    try {
+        const result = await query(`
+            SELECT ci.id AS cart_item_id, b.id AS book_id, b.title, b.image, b.price, b.author
+            FROM cart_items ci JOIN books b ON ci.book_id = b.id WHERE ci.user_id = $1
+        `, [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
+});
 
-    const bookId = req.params.id;
+app.post('/cart/add', verifyToken, async (req, res) => {
+    const bookId = req.body.book_id || req.body.bookId;
+    try {
+        const check = await query('SELECT * FROM cart_items WHERE user_id = $1 AND book_id = $2', [req.user.id, bookId]);
+        if (check.rows[0]) return res.status(400).json({ message: "หนังสือเล่มนี้อยู่ในตะกร้าแล้ว" });
+        await query('INSERT INTO cart_items (user_id, book_id) VALUES ($1, $2)', [req.user.id, bookId]);
+        res.status(201).json({ message: "เพิ่มลงตะกร้าเรียบร้อย" });
+    } catch (err) { res.status(500).json({ message: "Error adding to cart" }); }
+});
+
+app.delete('/cart/:id', verifyToken, async (req, res) => {
+    try {
+        await query('DELETE FROM cart_items WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+        res.json({ message: "ลบสินค้าเรียบร้อยแล้ว" });
+    } catch (err) { res.status(500).json({ message: "Error deleting item" }); }
+});
+
+// 📚 Admin - Books
+app.post('/admin/add-book', verifyToken, uploadCover.single('image'), async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden: Admin only" });
+    const { title, author, category, genre, description, price } = req.body;
+    let imagePath = req.file ? req.file.path : (req.body.image || null);
+    try {
+        const result = await query(
+            'INSERT INTO books (title, author, category, genre, description, image, price, likes) VALUES ($1,$2,$3,$4,$5,$6,$7,0) RETURNING id',
+            [title, author, category, genre || null, description, imagePath, price || 0]
+        );
+        res.status(201).json({ message: 'Book added successfully', bookId: result.rows[0].id });
+    } catch (err) { res.status(500).json({ message: 'Database error', error: err.message }); }
+});
+
+app.put('/admin/update-book/:id', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden: Admin only" });
     const { title, author, category, genre, description, image, price } = req.body;
-
-    const sql = `UPDATE books SET title = ?, author = ?, category = ?, genre = ?, description = ?, image = ?, price = ? WHERE id = ?`;
-    db.run(sql, [title, author, category, genre || null, description, image, price || 0, bookId], function(err) {
-        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
-        res.json({ message: 'อัปเดตหนังสือสำเร็จ', bookId });
-    });
+    try {
+        await query('UPDATE books SET title=$1, author=$2, category=$3, genre=$4, description=$5, image=$6, price=$7 WHERE id=$8',
+            [title, author, category, genre || null, description, image, price || 0, req.params.id]);
+        res.json({ message: 'อัปเดตหนังสือสำเร็จ' });
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
 });
 
-// ── [DELETE] admin ลบหนังสือ ─────────────────────────────────────────────────
-app.delete('/admin/delete-book/:id', verifyToken, (req, res) => {
+app.delete('/admin/delete-book/:id', verifyToken, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden: Admin only" });
-
-    const bookId = req.params.id;
-    db.run(`DELETE FROM books WHERE id = ?`, [bookId], function(err) {
-        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
-        // ลบ episodes ที่เกี่ยวข้องด้วย
-        db.run(`DELETE FROM episodes WHERE book_id = ?`, [bookId]);
+    try {
+        await query('DELETE FROM episodes WHERE book_id = $1', [req.params.id]);
+        await query('DELETE FROM books WHERE id = $1', [req.params.id]);
         res.json({ message: 'ลบหนังสือสำเร็จ' });
-    });
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
 });
 
-app.get('/books/:id/episodes', (req, res) => {
-    const sql = `SELECT * FROM episodes WHERE book_id = ? ORDER BY episode_number ASC`;
-    db.all(sql, [req.params.id], (err, rows) => {
-        if (err) return res.status(500).json({ message: 'Database error' });
-        res.json(rows);
-    });
+// 📖 Episodes
+app.get('/books/:id/episodes', async (req, res) => {
+    try {
+        const result = await query('SELECT * FROM episodes WHERE book_id = $1 ORDER BY episode_number ASC', [req.params.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
 });
 
-app.post('/admin/add-episode', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: "Forbidden: Admin only" });
-    }
-
+app.post('/admin/add-episode', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden: Admin only" });
     const { book_id, episode_number, title, content } = req.body;
-    if (!book_id || !title || !content) {
-        return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
-    }
-
-    // เพิ่ม created_at และ CURRENT_TIMESTAMP เพื่อบันทึกเวลาปัจจุบันเสมอ
-    const sql = `INSERT INTO episodes (book_id, episode_number, title, content, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`;
-    const params = [book_id, episode_number || 1, title, content];
-
-    db.run(sql, params, function(err) {
-        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
-
-        const newEpisodeId = this.lastID;
-
-        // ดึงชื่อหนังสือ แล้วค่อยแจ้งเตือน
-        db.get(`SELECT title FROM books WHERE id = ?`, [book_id], (err2, book) => {
-            const bookTitle = book ? book.title : `หนังสือ #${book_id}`;
-            const epLabel   = `ตอนที่ ${episode_number || 1}${title ? ` — ${title}` : ''}`;
-
-            // แจ้งเตือน real-time ทุก client (เหมือนเดิม)
-            io.emit('new_episode_alert', {
-                book_id:    book_id,
-                episode_id: newEpisodeId,
-                message:    'มีการอัปเดตตอนใหม่!'
-            });
-
-            // หา user ทุกคนที่ซื้อหนังสือเล่มนี้แบบเล่ม (purchased_books)
-            db.all(
-                `SELECT DISTINCT user_id FROM purchased_books WHERE book_id = ?`,
-                [book_id],
-                (err3, buyers) => {
-                    if (err3 || !buyers || buyers.length === 0) return;
-
-                    const notifSql = `INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES (?, 'new_episode', ?, ?, ?)`;
-                    buyers.forEach(({ user_id }) => {
-                        db.run(notifSql, [
-                            user_id,
-                            `มีตอนใหม่: ${bookTitle}`,
-                            `${epLabel} เพิ่งเผยแพร่แล้ว — แตะเพื่ออ่านเลย!`,
-                            newEpisodeId
-                        ], (e) => { if (e) console.error('user_notifications insert error:', e.message); });
-                    });
-                }
+    if (!book_id || !title || !content) return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+    try {
+        const result = await query(
+            'INSERT INTO episodes (book_id, episode_number, title, content) VALUES ($1,$2,$3,$4) RETURNING id',
+            [book_id, episode_number || 1, title, content]
+        );
+        const newEpisodeId = result.rows[0].id;
+        const bookRes = await query('SELECT title FROM books WHERE id = $1', [book_id]);
+        const bookTitle = bookRes.rows[0] ? bookRes.rows[0].title : `หนังสือ #${book_id}`;
+        const epLabel = `ตอนที่ ${episode_number || 1}${title ? ` — ${title}` : ''}`;
+        io.emit('new_episode_alert', { book_id, episode_id: newEpisodeId, message: 'มีการอัปเดตตอนใหม่!' });
+        const buyers = await query('SELECT DISTINCT user_id FROM purchased_books WHERE book_id = $1', [book_id]);
+        for (const { user_id } of buyers.rows) {
+            await query(
+                `INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES ($1,'new_episode',$2,$3,$4)`,
+                [user_id, `มีตอนใหม่: ${bookTitle}`, `${epLabel} เพิ่งเผยแพร่แล้ว — แตะเพื่ออ่านเลย!`, newEpisodeId]
             );
-        });
-
+        }
         res.status(201).json({ message: 'เพิ่มตอนสำเร็จ', episodeId: newEpisodeId });
-    });
+    } catch (err) { res.status(500).json({ message: 'Database error', error: err.message }); }
 });
 
-// ── [PUT] admin แก้ไขตอน + แจ้งเตือน user ที่ซื้อแบบเล่ม ──────────────────
-app.put('/admin/update-episode/:id', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: "Forbidden: Admin only" });
-    }
-
-    const episodeId = req.params.id;
+app.put('/admin/update-episode/:id', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden: Admin only" });
     const { episode_number, title, content } = req.body;
-
-    if (!title || !content) {
-        return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
-    }
-
-    // ดึง book_id และข้อมูลตอนเดิมก่อน
-    db.get(`SELECT book_id, episode_number, title FROM episodes WHERE id = ?`, [episodeId], (err, ep) => {
-        if (err || !ep) return res.status(404).json({ message: "ไม่พบตอนนี้" });
-
+    if (!title || !content) return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
+    try {
+        const epRes = await query('SELECT book_id, episode_number FROM episodes WHERE id = $1', [req.params.id]);
+        if (!epRes.rows[0]) return res.status(404).json({ message: "ไม่พบตอนนี้" });
+        const ep = epRes.rows[0];
         const finalEpNumber = episode_number || ep.episode_number;
-
-        db.run(
-            `UPDATE episodes SET episode_number = ?, title = ?, content = ? WHERE id = ?`,
-            [finalEpNumber, title, content, episodeId],
-            function(err2) {
-                if (err2) return res.status(500).json({ message: 'Database error', error: err2.message });
-
-                // ดึงชื่อหนังสือ แล้วแจ้งเตือน
-                db.get(`SELECT title FROM books WHERE id = ?`, [ep.book_id], (err3, book) => {
-                    const bookTitle = book ? book.title : `หนังสือ #${ep.book_id}`;
-                    const epLabel   = `ตอนที่ ${finalEpNumber}${title ? ` — ${title}` : ''}`;
-
-                    // แจ้งเตือน real-time ทุก client
-                    io.emit('new_episode_alert', {
-                        book_id:    ep.book_id,
-                        episode_id: episodeId,
-                        message:    'มีการอัปเดตตอน!'
-                    });
-
-                    // หา user ที่ซื้อแบบเล่ม แล้วบันทึก user_notifications
-                    db.all(
-                        `SELECT DISTINCT user_id FROM purchased_books WHERE book_id = ?`,
-                        [ep.book_id],
-                        (err4, buyers) => {
-                            if (err4 || !buyers || buyers.length === 0) return;
-
-                            const notifSql = `INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES (?, 'episode_updated', ?, ?, ?)`;
-                            buyers.forEach(({ user_id }) => {
-                                db.run(notifSql, [
-                                    user_id,
-                                    `อัปเดตเนื้อหา: ${bookTitle}`,
-                                    `${epLabel} ได้รับการอัปเดตเนื้อหาใหม่แล้ว`,
-                                    episodeId
-                                ], (e) => { if (e) console.error('user_notifications insert error:', e.message); });
-                            });
-                        }
-                    );
-                });
-
-                res.json({ message: 'อัปเดตตอนสำเร็จ', episodeId });
-            }
-        );
-    });
+        await query('UPDATE episodes SET episode_number=$1, title=$2, content=$3 WHERE id=$4', [finalEpNumber, title, content, req.params.id]);
+        const bookRes = await query('SELECT title FROM books WHERE id = $1', [ep.book_id]);
+        const bookTitle = bookRes.rows[0] ? bookRes.rows[0].title : `หนังสือ #${ep.book_id}`;
+        const epLabel = `ตอนที่ ${finalEpNumber}${title ? ` — ${title}` : ''}`;
+        io.emit('new_episode_alert', { book_id: ep.book_id, episode_id: req.params.id, message: 'มีการอัปเดตตอน!' });
+        const buyers = await query('SELECT DISTINCT user_id FROM purchased_books WHERE book_id = $1', [ep.book_id]);
+        for (const { user_id } of buyers.rows) {
+            await query(
+                `INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES ($1,'episode_updated',$2,$3,$4)`,
+                [user_id, `อัปเดตเนื้อหา: ${bookTitle}`, `${epLabel} ได้รับการอัปเดตเนื้อหาใหม่แล้ว`, req.params.id]
+            );
+        }
+        res.json({ message: 'อัปเดตตอนสำเร็จ' });
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
 });
 
-app.delete('/admin/delete-episode/:id', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ message: "Forbidden: Admin only" });
-    }
-
-    const sql = `DELETE FROM episodes WHERE id = ?`;
-    db.run(sql, [req.params.id], function(err) {
-        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
+app.delete('/admin/delete-episode/:id', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden: Admin only" });
+    try {
+        await query('DELETE FROM episodes WHERE id = $1', [req.params.id]);
         res.json({ message: 'ลบตอนสำเร็จ' });
-    });
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
 });
 
-app.get('/profile', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    const sql = "SELECT id, username, email, role, image, coins FROM users WHERE id = ?";
-
-    db.get(sql, [userId], (err, user) => {
-        if (err) return res.status(500).json({ message: "Database error" });
+// 👤 Profile
+app.get('/profile', verifyToken, async (req, res) => {
+    try {
+        const result = await query('SELECT id, username, email, role, image, coins FROM users WHERE id = $1', [req.user.id]);
+        const user = result.rows[0];
         if (!user) return res.status(404).json({ message: "User not found" });
-        res.json({
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            image: user.image || null,
-            coins: user.coins || 0
-        });
-    });
+        res.json({ id: user.id, username: user.username, email: user.email, image: user.image || null, coins: user.coins || 0 });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-// ✅ [ADMIN] อนุมัติการเติมเงิน (อัปเดตสถานะ และบวกเหรียญให้ User)
-app.put('/admin/topups/:id/approve', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
-    const requestId = req.params.id;
-    const adminId   = req.user.id;
-
-    db.get(`SELECT * FROM topup_requests WHERE id = ? AND status = 'pending'`, [requestId], (err, request) => {
-        if (err || !request) return res.status(404).json({ message: "ไม่พบคำขอ หรืออนุมัติไปแล้ว" });
-
-        const totalCoins = request.total_coins || request.coins;
-
-        // 1. อัปเดตสถานะ
-        db.run(
-            `UPDATE topup_requests SET status = 'approved', approved_at = CURRENT_TIMESTAMP, approved_by = ? WHERE id = ?`,
-            [adminId, requestId],
-            function(err) {
-                if (err) return res.status(500).json({ message: "Database error (update)" });
-
-                // 2. บวกเหรียญให้ user
-                db.run(`UPDATE users SET coins = coins + ? WHERE id = ?`, [totalCoins, request.user_id], function(err) {
-                    if (err) return res.status(500).json({ message: "Failed to add coins" });
-
-                    // 3. บันทึก purchase_history
-                    db.run(
-                        `INSERT INTO purchase_history (user_id, title, type, price) VALUES (?, ?, 'topup', 0)`,
-                        [request.user_id, `เติมเหรียญ ${Number(totalCoins).toLocaleString()} เหรียญ (฿${request.amount})`]
-                    );
-
-                    // 4. ส่ง user_notification แจ้ง user
-                    db.run(
-                        `INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES (?, ?, ?, ?, ?)`,
-                        [
-                            request.user_id,
-                            'topup_approved',
-                            `เติมเหรียญสำเร็จ +${Number(totalCoins).toLocaleString()} เหรียญ`,
-                            `ชำระ ฿${request.amount} — รับ ${Number(totalCoins).toLocaleString()} เหรียญแล้ว`,
-                            requestId
-                        ],
-                        function(err2) {
-                            if (err2) console.error("user_notifications insert error:", err2.message);
-                            res.json({ message: "อนุมัติสำเร็จ ผู้ใช้ได้รับเหรียญแล้ว!" });
-                        }
-                    );
-                });
-            }
-        );
-    });
-});
-
-// ── [PUT] admin ปฏิเสธคำขอ (endpoint ที่ AdminTopup.jsx เรียก) ─────────────
-app.put('/admin/topups/:id/reject', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
-    const requestId = req.params.id;
-    const adminId   = req.user.id;
-    const { note }  = req.body;
-
-    db.get(`SELECT * FROM topup_requests WHERE id = ? AND status = 'pending'`, [requestId], (err, request) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        if (!request) return res.status(404).json({ message: "ไม่พบคำขอ หรือถูกดำเนินการแล้ว" });
-
-        const rejectNote = (note && note.trim()) ? note.trim() : 'ปฏิเสธโดยแอดมิน';
-
-        // 1. อัปเดตสถานะ
-        db.run(
-            `UPDATE topup_requests SET status = 'rejected', approved_at = CURRENT_TIMESTAMP, approved_by = ?, note = ? WHERE id = ?`,
-            [adminId, rejectNote, requestId],
-            function(err) {
-                if (err) return res.status(500).json({ message: "Database error (update)" });
-
-                // 2. ส่ง user_notification แจ้ง user
-                db.run(
-                    `INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES (?, ?, ?, ?, ?)`,
-                    [request.user_id, 'topup_rejected', 'คำขอเติมเหรียญถูกปฏิเสธ', rejectNote, requestId],
-                    function(err2) {
-                        if (err2) console.error("user_notifications insert error:", err2.message);
-                        // ส่ง response สำเร็จเสมอ แม้ notification จะ fail
-                        res.json({ message: "ปฏิเสธคำขอแล้ว" });
-                    }
-                );
-            }
-        );
-    });
-});
-app.put('/profile/username', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    const { username } = req.body;
-    const sql = "UPDATE users SET username = ? WHERE id = ?";
-
-    db.run(sql, [username, userId], function(err) {
-        if (err) return res.status(500).json({ message: "Error" });
+app.put('/profile/username', verifyToken, async (req, res) => {
+    try {
+        await query('UPDATE users SET username = $1 WHERE id = $2', [req.body.username, req.user.id]);
         res.json({ message: "Username updated" });
-    });
+    } catch (err) { res.status(500).json({ message: "Error" }); }
 });
 
 app.put('/profile/password', verifyToken, async (req, res) => {
-    const userId = req.user.id;
     const { oldPassword, newPassword } = req.body;
-
-    db.get("SELECT password FROM users WHERE id = ?", [userId], async (err, user) => {
-        if (err || !user) return res.status(404).json({ message: "User not found" });
-        
+    try {
+        const result = await query('SELECT password FROM users WHERE id = $1', [req.user.id]);
+        const user = result.rows[0];
+        if (!user) return res.status(404).json({ message: "User not found" });
         const match = await bcrypt.compare(oldPassword, user.password);
         if (!match) return res.status(401).json({ message: "Wrong password" });
-
         const hashed = await bcrypt.hash(newPassword, 10);
-        db.run("UPDATE users SET password = ? WHERE id = ?", [hashed, userId]);
+        await query('UPDATE users SET password = $1 WHERE id = $2', [hashed, req.user.id]);
         res.json({ message: "Password updated" });
-    });
+    } catch (err) { res.status(500).json({ message: "Error" }); }
 });
 
-app.put('/profile/image', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    const { image } = req.body;
-
-    db.run("UPDATE users SET image = ? WHERE id = ?", [image, userId], (err) => {
-        if (err) return res.status(500).json({ message: "Error" });
+app.put('/profile/image', verifyToken, async (req, res) => {
+    try {
+        await query('UPDATE users SET image = $1 WHERE id = $2', [req.body.image, req.user.id]);
         res.json({ message: "Image updated" });
-    });
+    } catch (err) { res.status(500).json({ message: "Error" }); }
 });
 
-app.get('/books', (req, res) => {
+// 📚 Books
+app.get('/books', async (req, res) => {
     const { category, subcategory, search, sortBy, genre } = req.query;
     const params = [];
     const conditions = [];
 
-    // ── หมวดหมู่หลัก ──────────────────────────────────────────────────────────
     const categoryMap = {
         'นิยาย': ['นิยาย', 'นิยายรักโรแมนติก', 'นิยายวาย', 'นิยายแฟนตาซี', 'นิยายสืบสวน',
                    'นิยายกำลังภายใน', 'ไลท์โนเวล', 'วรรณกรรมทั่วไป', 'นิยายยูริ', 'กวีนิพนธ์', 'แฟนเฟิค'],
         'การ์ตูน/มังงะ': ['การ์ตูน', 'มังงะ', 'การ์ตูนโรแมนติก', 'การ์ตูนแอคชั่น',
-                           'การ์ตูนแฟนตาซี', 'การ์ตูนตลก', 'การ์ตูนสยองขวัญ', 'การ์ตูนกีฬา',
-                           'การ์ตูนวาย', 'การ์ตูนยูริ']
+                           'การ์ตูนแฟนตาซี', 'การ์ตูนตลก', 'การ์ตูนสยองขวัญ', 'การ์ตูนกีฬา', 'การ์ตูนวาย', 'การ์ตูนยูริ']
     };
 
+    let paramIdx = 1;
     if (category) {
         if (subcategory) {
-            conditions.push(`b.category = ?`);
-            params.push(subcategory);
+            conditions.push(`b.category = $${paramIdx++}`); params.push(subcategory);
         } else if (categoryMap[category]) {
-            const placeholders = categoryMap[category].map(() => '?').join(',');
-            conditions.push(`b.category IN (${placeholders})`);
-            params.push(...categoryMap[category]);
+            const ph = categoryMap[category].map(() => `$${paramIdx++}`).join(',');
+            conditions.push(`b.category IN (${ph})`); params.push(...categoryMap[category]);
         } else {
-            conditions.push(`b.category = ?`);
-            params.push(category);
+            conditions.push(`b.category = $${paramIdx++}`); params.push(category);
         }
     }
-
-    // ── ค้นหาด้วยชื่อหนังสือ / ชื่อผู้แต่ง ───────────────────────────────────
     if (search && search.trim()) {
-        conditions.push(`(b.title LIKE ? OR b.author LIKE ?)`);
-        const q = `%${search.trim()}%`;
-        params.push(q, q);
+        conditions.push(`(b.title ILIKE $${paramIdx} OR b.author ILIKE $${paramIdx++})`);
+        params.push(`%${search.trim()}%`);
     }
-
-    // ── กรองตามแนวหนังสือ (genre) ──────────────────────────────────────────────
     if (genre && genre.trim()) {
-        conditions.push(`b.genre LIKE ?`);
-        params.push(`%${genre.trim()}%`);
+        conditions.push(`b.genre ILIKE $${paramIdx++}`); params.push(`%${genre.trim()}%`);
     }
 
-    // ── นับจำนวนตอนจาก episodes table ─────────────────────────────────────────
-    let sql = `
-        SELECT b.*,
-               COUNT(DISTINCT e.id) as episode_count
-        FROM books b
-        LEFT JOIN episodes e ON e.book_id = b.id
-    `;
+    let sql = `SELECT b.*, COUNT(DISTINCT e.id) as episode_count FROM books b LEFT JOIN episodes e ON e.book_id = b.id`;
+    if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
+    sql += ' GROUP BY b.id';
 
-    if (conditions.length > 0) sql += ` WHERE ` + conditions.join(' AND ');
-    sql += ` GROUP BY b.id`;
-
-    // ── เรียงลำดับ ─────────────────────────────────────────────────────────────
     const sortMap = {
-        'price_asc':    `b.price ASC`,
-        'price_desc':   `b.price DESC`,
-        'episodes_asc': `episode_count ASC`,
-        'episodes_desc':`episode_count DESC`,
-        'popular':      `b.likes DESC`,
-        'author_asc':   `b.author ASC`,
-        'author_desc':  `b.author DESC`,
-        'newest':       `b.created_at DESC`,
-        'oldest':       `b.created_at ASC`,
+        'price_asc': 'b.price ASC', 'price_desc': 'b.price DESC',
+        'popular': 'b.likes DESC', 'author_asc': 'b.author ASC',
+        'author_desc': 'b.author DESC', 'newest': 'b.created_at DESC', 'oldest': 'b.created_at ASC',
     };
-    sql += ` ORDER BY ` + (sortMap[sortBy] || `b.created_at DESC`);
+    sql += ' ORDER BY ' + (sortMap[sortBy] || 'b.created_at DESC');
 
-    db.all(sql, params, (err, rows) => {
-        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
-        res.json(rows);
-    });
+    try {
+        const result = await query(sql, params);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: 'Database error', error: err.message }); }
 });
 
-// ── [GET] ดึงรายการแนวหนังสือ (genre) ทั้งหมดที่มีในระบบ ──────────────────────
-app.get('/books/genres', (req, res) => {
-    // คืน list แนวหนังสือ predefined + แนวที่ admin เพิ่มเองใน DB
-    const predefined = [
-        'โรแมนติก', 'แฟนตาซี', 'แอคชั่น', 'ผจญภัย', 'สืบสวนสอบสวน',
-        'สยองขวัญ', 'ตลกขบขัน', 'ดราม่า', 'วิทยาศาสตร์', 'ชีวิตประจำวัน',
-        'กีฬา', 'ประวัติศาสตร์', 'จิตวิทยา', 'เกม', 'ซูเปอร์ฮีโร่',
-        'วาย (BL)', 'ยูริ (GL)', 'ไอดอล', 'โรงเรียน', 'ครอบครัว'
-    ];
-
-    db.all(`SELECT DISTINCT genre FROM books WHERE genre IS NOT NULL AND genre != ''`, [], (err, rows) => {
-        if (err) return res.status(500).json({ message: 'Database error' });
-
-        // รวม genre จาก DB เข้ากับ predefined แล้ว deduplicate
-        const fromDb = rows.map(r => r.genre).filter(Boolean);
-        const merged = [...new Set([...predefined, ...fromDb])].sort((a, b) => a.localeCompare(b, 'th'));
-        res.json(merged);
-    });
+app.get('/books/genres', async (req, res) => {
+    const predefined = ['โรแมนติก','แฟนตาซี','แอคชั่น','ผจญภัย','สืบสวนสอบสวน','สยองขวัญ','ตลกขบขัน',
+        'ดราม่า','วิทยาศาสตร์','ชีวิตประจำวัน','กีฬา','ประวัติศาสตร์','จิตวิทยา','เกม','ซูเปอร์ฮีโร่',
+        'วาย (BL)','ยูริ (GL)','ไอดอล','โรงเรียน','ครอบครัว'];
+    try {
+        const result = await query(`SELECT DISTINCT genre FROM books WHERE genre IS NOT NULL AND genre != ''`);
+        const fromDb = result.rows.map(r => r.genre).filter(Boolean);
+        const all = [...new Set([...predefined, ...fromDb])];
+        res.json(all);
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
 });
 
-// ── [GET] ดึง subcategory จริงจาก DB (DISTINCT category values) ──────────────
-app.get('/books/categories', (req, res) => {
-    const novelParents = ['นิยาย', 'นิยายรักโรแมนติก', 'นิยายวาย', 'นิยายแฟนตาซี', 'นิยายสืบสวน',
-                          'นิยายกำลังภายใน', 'ไลท์โนเวล', 'วรรณกรรมทั่วไป', 'นิยายยูริ', 'กวีนิพนธ์', 'แฟนเฟิค'];
-    const mangaParents = ['การ์ตูน', 'มังงะ', 'การ์ตูนโรแมนติก', 'การ์ตูนแอคชั่น',
-                          'การ์ตูนแฟนตาซี', 'การ์ตูนตลก', 'การ์ตูนสยองขวัญ', 'การ์ตูนกีฬา',
-                          'การ์ตูนวาย', 'การ์ตูนยูริ'];
-
-    const novelPh  = novelParents.map(() => '?').join(',');
-    const mangaPh  = mangaParents.map(() => '?').join(',');
-
-    const sql = `
-        SELECT category, COUNT(*) as count FROM books
-        WHERE category IN (${novelPh}) OR category IN (${mangaPh})
-        GROUP BY category
-        HAVING count > 0
-        ORDER BY category
-    `;
-
-    db.all(sql, [...novelParents, ...mangaParents], (err, rows) => {
-        if (err) return res.status(500).json({ message: 'Database error' });
-
-        const novelSubs = rows
-            .filter(r => novelParents.includes(r.category))
-            .map(r => ({ name: r.category, count: r.count }));
-        const mangaSubs = rows
-            .filter(r => mangaParents.includes(r.category))
-            .map(r => ({ name: r.category, count: r.count }));
-
+app.get('/books/categories', async (req, res) => {
+    const novelParents = ['นิยาย','นิยายรักโรแมนติก','นิยายวาย','นิยายแฟนตาซี','นิยายสืบสวน','นิยายกำลังภายใน','ไลท์โนเวล','วรรณกรรมทั่วไป','นิยายยูริ','กวีนิพนธ์','แฟนเฟิค'];
+    const mangaParents = ['การ์ตูน','มังงะ','การ์ตูนโรแมนติก','การ์ตูนแอคชั่น','การ์ตูนแฟนตาซี','การ์ตูนตลก','การ์ตูนสยองขวัญ','การ์ตูนกีฬา','การ์ตูนวาย','การ์ตูนยูริ'];
+    const all = [...novelParents, ...mangaParents];
+    const ph = all.map((_, i) => `$${i+1}`).join(',');
+    try {
+        const result = await query(`SELECT category, COUNT(*) as count FROM books WHERE category IN (${ph}) GROUP BY category ORDER BY category`, all);
+        const novelSubs = result.rows.filter(r => novelParents.includes(r.category)).map(r => ({ name: r.category, count: r.count }));
+        const mangaSubs = result.rows.filter(r => mangaParents.includes(r.category)).map(r => ({ name: r.category, count: r.count }));
         res.json({ novel: novelSubs, manga: mangaSubs });
-    });
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
 });
 
-app.get('/unlocked/:bookId', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    const bookId = req.params.bookId;
-    
-    db.get(`SELECT id FROM purchased_books WHERE user_id = ? AND book_id = ?`, [userId, bookId], (err, purchased) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-
-        if (purchased) {
-            db.all(`SELECT id as episode_id FROM episodes WHERE book_id = ?`, [bookId], (err, rows) => {
-                if (err) return res.status(500).json({ message: "Database error" });
-                res.json(rows.map(row => row.episode_id)); 
-            });
-        } else {
-            db.all(`SELECT episode_id FROM unlocked_episodes WHERE user_id = ? AND book_id = ?`, [userId, bookId], (err, rows) => {
-                if (err) return res.status(500).json({ message: "Database error" });
-                res.json(rows.map(row => row.episode_id)); 
-            });
+app.get('/unlocked/:bookId', verifyToken, async (req, res) => {
+    try {
+        const purchased = await query('SELECT id FROM purchased_books WHERE user_id = $1 AND book_id = $2', [req.user.id, req.params.bookId]);
+        if (purchased.rows[0]) {
+            const eps = await query('SELECT id as episode_id FROM episodes WHERE book_id = $1', [req.params.bookId]);
+            return res.json(eps.rows.map(r => r.episode_id));
         }
-    });
+        const unlocked = await query('SELECT episode_id FROM unlocked_episodes WHERE user_id = $1 AND book_id = $2', [req.user.id, req.params.bookId]);
+        res.json(unlocked.rows.map(r => r.episode_id));
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-app.post('/favorites/add', verifyToken, (req, res) => {
-    const userId = req.user.id;
+// ❤️ Favorites
+app.post('/favorites/add', verifyToken, async (req, res) => {
     const bookId = req.body.book_id || req.body.bookId;
-
-    const sql = `INSERT OR IGNORE INTO favorites (user_id, book_id) VALUES (?, ?)`;
-
-    db.run(sql, [userId, bookId], function(err) {
-        if (err) return res.status(500).json({ message: "Database error" });
+    try {
+        await query('INSERT INTO favorites (user_id, book_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [req.user.id, bookId]);
         res.json({ message: "เพิ่มรายการโปรดแล้ว" });
-    });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-app.delete('/favorites/remove', verifyToken, (req, res) => {
-    const userId = req.user.id;
+app.delete('/favorites/remove', verifyToken, async (req, res) => {
     const bookId = req.body.book_id || req.body.bookId;
-
-    const sql = `DELETE FROM favorites WHERE user_id = ? AND book_id = ?`;
-
-    db.run(sql, [userId, bookId], function(err) {
-        if (err) return res.status(500).json({ message: "Database error" });
+    try {
+        await query('DELETE FROM favorites WHERE user_id = $1 AND book_id = $2', [req.user.id, bookId]);
         res.json({ message: "ลบออกจากรายการโปรดแล้ว" });
-    });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
-app.post('/favorites/toggle', verifyToken, (req, res) => {
-    const userId = req.user.id;
+
+app.post('/favorites/toggle', verifyToken, async (req, res) => {
     const bookId = req.body.book_id || req.body.bookId;
-
-    db.get(
-        `SELECT * FROM favorites WHERE user_id = ? AND book_id = ?`,
-        [userId, bookId],
-        (err, row) => {
-            if (err) return res.status(500).json({ message: "Database error" });
-
-            if (row) {
-                db.run(`DELETE FROM favorites WHERE id = ?`, [row.id], () => {
-                db.run(`UPDATE books SET likes = MAX(0, likes - 1) WHERE id = ?`, [bookId]);
-                res.json({ status: "removed" });
-            });
-            } else {
-                db.run(`INSERT INTO favorites (user_id, book_id) VALUES (?, ?)`, [userId, bookId], () => {
-                db.run(`UPDATE books SET likes = likes + 1 WHERE id = ?`, [bookId]);
-                res.json({ status: "added" });
-            });
-            }
+    try {
+        const check = await query('SELECT * FROM favorites WHERE user_id = $1 AND book_id = $2', [req.user.id, bookId]);
+        if (check.rows[0]) {
+            await query('DELETE FROM favorites WHERE id = $1', [check.rows[0].id]);
+            await query('UPDATE books SET likes = GREATEST(0, likes - 1) WHERE id = $1', [bookId]);
+            res.json({ status: "removed" });
+        } else {
+            await query('INSERT INTO favorites (user_id, book_id) VALUES ($1, $2)', [req.user.id, bookId]);
+            await query('UPDATE books SET likes = likes + 1 WHERE id = $1', [bookId]);
+            res.json({ status: "added" });
         }
-    );
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-app.get('/favorites', verifyToken, (req, res) => {
-    const userId = req.user.id;
-
-    db.all(
-        `SELECT book_id FROM favorites WHERE user_id = ?`,
-        [userId],
-        (err, rows) => {
-            if (err) return res.status(500).json({ message: "Database error" });
-            res.json(rows);
-        }
-    );
+app.get('/favorites', verifyToken, async (req, res) => {
+    try {
+        const result = await query('SELECT book_id FROM favorites WHERE user_id = $1', [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-app.get('/favorites/full', verifyToken, (req, res) => {
-    const userId = req.user.id;
-
-    const sql = `
-        SELECT b.*
-        FROM favorites f
-        JOIN books b ON f.book_id = b.id
-        WHERE f.user_id = ?
-        ORDER BY f.created_at DESC
-    `;
-
-    db.all(sql, [userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json(rows);
-    });
+app.get('/favorites/full', verifyToken, async (req, res) => {
+    try {
+        const result = await query(`SELECT b.* FROM favorites f JOIN books b ON f.book_id = b.id WHERE f.user_id = $1 ORDER BY f.created_at DESC`, [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-app.post('/cart/checkout', verifyToken, (req, res) => {
-    const userId = req.user.id;
-
-    const cartSql = `
-        SELECT ci.book_id, b.price, b.title 
-        FROM cart_items ci 
-        JOIN books b ON ci.book_id = b.id 
-        WHERE ci.user_id = ?`;
-
-    db.all(cartSql, [userId], (err, items) => {
-        if (err) return res.status(500).json({ message: "Database error (fetch cart)" });
+// 🛒 Checkout
+app.post('/cart/checkout', verifyToken, async (req, res) => {
+    try {
+        const cartRes = await query(`SELECT ci.book_id, b.price, b.title FROM cart_items ci JOIN books b ON ci.book_id = b.id WHERE ci.user_id = $1`, [req.user.id]);
+        const items = cartRes.rows;
         if (items.length === 0) return res.status(400).json({ message: "ไม่มีสินค้าในตะกร้า" });
-
         const totalCost = items.reduce((sum, item) => sum + (item.price || 0), 0);
-
-        db.get(`SELECT coins FROM users WHERE id = ?`, [userId], (err, user) => {
-            if (err || !user) return res.status(500).json({ message: "Error fetching user" });
-            
-            if (user.coins < totalCost) {
-                return res.status(400).json({ message: "เหรียญไม่เพียงพอ" });
-            }
-
-            db.run(`UPDATE users SET coins = coins - ? WHERE id = ?`, [totalCost, userId], function(err) {
-                if (err) return res.status(500).json({ message: "เกิดข้อผิดพลาดในการหักเหรียญ" });
-
-                const placeholders = items.map(() => "(?, ?)").join(",");
-                const values = [];
-                items.forEach(item => values.push(userId, item.book_id));
-
-                db.run(`INSERT OR IGNORE INTO purchased_books (user_id, book_id) VALUES ${placeholders}`, values, function(err) {
-                    if (err) console.error("Error inserting to library:", err);
-
-                    const historyPlaceholders = items.map(() => "(?, ?, ?, ?)").join(",");
-                    const historyValues = [];
-                    items.forEach(item => historyValues.push(userId, item.title, 'book', item.price || 0));
-
-                    db.run(`INSERT INTO purchase_history (user_id, title, type, price) VALUES ${historyPlaceholders}`, historyValues, function(err) {
-                        if (err) console.error("Error inserting to purchase_history:", err);
-
-                        db.run(`DELETE FROM cart_items WHERE user_id = ?`, [userId], (err) => {
-                            if (err) console.error("Clear cart error:", err);
-                            
-                            res.json({ 
-                                message: "ชำระเงินสำเร็จ! หนังสือถูกเพิ่มเข้าชั้นหนังสือของคุณแล้ว", 
-                                remainingCoins: user.coins - totalCost 
-                            });
-                        });
-                    });
-                });
-            });
-        });
-    });
-});
-
-app.get('/library/check', verifyToken, (req, res) => {
-    const userId = req.user.id;
-
-    db.all(`SELECT book_id FROM purchased_books WHERE user_id = ?`, [userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        const purchasedBookIds = rows.map(row => row.book_id);
-        res.json(purchasedBookIds);
-    });
-});
-
-app.get('/library', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    const sql = `
-        SELECT 
-            b.id, b.title, b.author, b.category, b.description, 
-            b.image, b.price, b.likes, pb.purchased_at
-        FROM purchased_books pb
-        JOIN books b ON pb.book_id = b.id
-        WHERE pb.user_id = ?
-        ORDER BY pb.purchased_at DESC
-    `;
-    db.all(sql, [userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
-        res.json(rows);
-    });
-});
-
-app.get('/library/episodes', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    const sql = `
-        SELECT 
-            b.id,
-            b.title,
-            b.author,
-            b.category,
-            b.description,
-            b.image,
-            b.price,
-            b.likes,
-            MAX(ue.unlocked_at) as purchased_at
-        FROM unlocked_episodes ue
-        JOIN books b ON ue.book_id = b.id
-        WHERE ue.user_id = ? 
-        AND b.id NOT IN (SELECT book_id FROM purchased_books WHERE user_id = ?)
-        GROUP BY b.id
-        ORDER BY purchased_at DESC
-    `;
- 
-    db.all(sql, [userId, userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: 'Database error', error: err.message });
-        res.json(rows);
-    });
-});
-
-app.get('/history', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    
-    const sql = `
-        SELECT id, title, type, price, purchased_at 
-        FROM purchase_history 
-        WHERE user_id = ? 
-        ORDER BY purchased_at DESC
-    `;
-    
-    db.all(sql, [userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: "Database error", error: err.message });
-        res.json(rows);
-    });
-});
-
-// ============================================================
-// 💰 TOPUP API — เติมเหรียญด้วย QR + สลิป
-// ============================================================
-
-// 📤 ส่งคำขอเติมเหรียญพร้อมสลิป
-app.post('/topup/request', verifyToken, uploadSlip.single('slip'), (req, res) => {
-    const userId = req.user.id;
-    const { package_id, coins, bonus, total_coins, amount } = req.body;
-
-    if (!package_id || !coins || !total_coins || !amount) {
-        return res.status(400).json({ message: "ข้อมูลไม่ครบถ้วน" });
-    }
-
-    // ✅ Cloudinary คืน URL ใน req.file.path
-    const slipPath = req.file ? req.file.path : null;
-
-    const sql = `
-        INSERT INTO topup_requests 
-        (user_id, package_id, coins, bonus, total_coins, amount, slip_image, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-    `;
-
-    db.run(sql, [userId, package_id, parseInt(coins), parseInt(bonus) || 0, parseInt(total_coins), parseFloat(amount), slipPath], function(err) {
-        if (err) {
-            return res.status(500).json({ message: "Database error", error: err.message });
+        const userRes = await query('SELECT coins FROM users WHERE id = $1', [req.user.id]);
+        const user = userRes.rows[0];
+        if (!user || user.coins < totalCost) return res.status(400).json({ message: "เหรียญไม่เพียงพอ" });
+        await query('UPDATE users SET coins = coins - $1 WHERE id = $2', [totalCost, req.user.id]);
+        for (const item of items) {
+            await query('INSERT INTO purchased_books (user_id, book_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [req.user.id, item.book_id]);
+            await query('INSERT INTO purchase_history (user_id, title, type, price) VALUES ($1, $2, $3, $4)', [req.user.id, item.title, 'book', item.price || 0]);
         }
-
-        const newRequestId = this.lastID;
-
-        // 🔔 บันทึกแจ้งเตือนให้ admin ทราบว่ามีคำขอเติมเหรียญใหม่
-        db.get(`SELECT username FROM users WHERE id = ?`, [userId], (err2, userRow) => {
-            const uname = userRow ? userRow.username : `User #${userId}`;
-            db.run(
-                `INSERT INTO admin_notifications (type, title, message, ref_id) VALUES (?, ?, ?, ?)`,
-                [
-                    'topup_pending',
-                    `คำขอเติมเหรียญใหม่`,
-                    `${uname} ส่งสลิปเติมเหรียญ ฿${parseFloat(amount).toLocaleString()} (${parseInt(total_coins).toLocaleString()} เหรียญ) รอการอนุมัติ`,
-                    newRequestId
-                ]
-            );
-        });
-
-        res.status(201).json({
-            message: "ส่งคำขอเติมเหรียญสำเร็จ! รอการตรวจสอบจากแอดมิน",
-            requestId: newRequestId,
-            status: 'pending'
-        });
-    });
+        await query('DELETE FROM cart_items WHERE user_id = $1', [req.user.id]);
+        res.json({ message: "ชำระเงินสำเร็จ! หนังสือถูกเพิ่มเข้าชั้นหนังสือของคุณแล้ว", remainingCoins: user.coins - totalCost });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-// 📋 ดึงประวัติคำขอเติมเหรียญของตัวเอง
-app.get('/topup/my-requests', verifyToken, (req, res) => {
-    const userId = req.user.id;
-
-    const sql = `
-        SELECT id, package_id, coins, bonus, total_coins, amount, slip_image, status,
-               created_at || 'Z' as created_at,
-               approved_at || 'Z' as approved_at,
-               note
-        FROM topup_requests
-        WHERE user_id = ?
-        ORDER BY created_at DESC
-        LIMIT 20
-    `;
-
-    db.all(sql, [userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json(rows);
-    });
+// 📚 Library
+app.get('/library/check', verifyToken, async (req, res) => {
+    try {
+        const result = await query('SELECT book_id FROM purchased_books WHERE user_id = $1', [req.user.id]);
+        res.json(result.rows.map(r => r.book_id));
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-// 👑 [ADMIN] ดึงคำขอเติมเหรียญทั้งหมด (pending ก่อน)
-app.get('/admin/topup-requests', verifyToken, (req, res) => {
+app.get('/library', verifyToken, async (req, res) => {
+    try {
+        const result = await query(`SELECT b.id, b.title, b.author, b.category, b.description, b.image, b.price, b.likes, pb.purchased_at
+            FROM purchased_books pb JOIN books b ON pb.book_id = b.id WHERE pb.user_id = $1 ORDER BY pb.purchased_at DESC`, [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
+});
+
+app.get('/library/episodes', verifyToken, async (req, res) => {
+    try {
+        const result = await query(`SELECT b.id, b.title, b.author, b.category, b.description, b.image, b.price, b.likes, MAX(ue.unlocked_at) as purchased_at
+            FROM unlocked_episodes ue JOIN books b ON ue.book_id = b.id
+            WHERE ue.user_id = $1 AND b.id NOT IN (SELECT book_id FROM purchased_books WHERE user_id = $1)
+            GROUP BY b.id ORDER BY purchased_at DESC`, [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
+});
+
+app.get('/history', verifyToken, async (req, res) => {
+    try {
+        const result = await query('SELECT id, title, type, price, purchased_at FROM purchase_history WHERE user_id = $1 ORDER BY purchased_at DESC', [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
+});
+
+// 💰 Topup
+app.post('/topup/request', verifyToken, uploadSlip.single('slip'), async (req, res) => {
+    const { package_id, coins, bonus, total_coins, amount } = req.body;
+    if (!package_id || !coins || !total_coins || !amount)
+        return res.status(400).json({ message: "ข้อมูลไม่ครบถ้วน" });
+    const slipPath = req.file ? req.file.path : null;
+    try {
+        const result = await query(
+            `INSERT INTO topup_requests (user_id, package_id, coins, bonus, total_coins, amount, slip_image, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING id`,
+            [req.user.id, package_id, parseInt(coins), parseInt(bonus) || 0, parseInt(total_coins), parseFloat(amount), slipPath]
+        );
+        const newRequestId = result.rows[0].id;
+        const userRes = await query('SELECT username FROM users WHERE id = $1', [req.user.id]);
+        const uname = userRes.rows[0] ? userRes.rows[0].username : `User #${req.user.id}`;
+        await query(`INSERT INTO admin_notifications (type, title, message, ref_id) VALUES ($1,$2,$3,$4)`,
+            ['topup_pending', 'คำขอเติมเหรียญใหม่', `${uname} ส่งสลิปเติมเหรียญ ฿${parseFloat(amount).toLocaleString()} (${parseInt(total_coins).toLocaleString()} เหรียญ)`, newRequestId]);
+        res.status(201).json({ message: "ส่งคำขอเติมเหรียญสำเร็จ!", requestId: newRequestId, status: 'pending' });
+    } catch (err) { res.status(500).json({ message: "Database error", error: err.message }); }
+});
+
+app.get('/topup/my-requests', verifyToken, async (req, res) => {
+    try {
+        const result = await query(`SELECT id, package_id, coins, bonus, total_coins, amount, slip_image, status, created_at, approved_at, note FROM topup_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20`, [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
+});
+
+app.get('/admin/topup-requests', verifyToken, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: "Admin only" });
-
     const status = req.query.status || 'pending';
-
-    const sql = `
-        SELECT tr.*, u.username, u.email
-        FROM topup_requests tr
-        JOIN users u ON tr.user_id = u.id
-        WHERE tr.status = ?
-        ORDER BY tr.created_at DESC
-    `;
-
-    db.all(sql, [status], (err, rows) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json(rows);
-    });
+    try {
+        const result = await query(`SELECT tr.*, u.username, u.email FROM topup_requests tr JOIN users u ON tr.user_id = u.id WHERE tr.status = $1 ORDER BY tr.created_at DESC`, [status]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-// ==========================================
-// ❤️ API สำหรับกดหัวใจ (เพิ่ม/ลบ ยอด likes)
-// ==========================================
-app.post('/toggle-like', (req, res) => {
+app.put('/admin/topups/:id/approve', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
+    try {
+        const reqRes = await query(`SELECT * FROM topup_requests WHERE id = $1 AND status = 'pending'`, [req.params.id]);
+        const request = reqRes.rows[0];
+        if (!request) return res.status(404).json({ message: "ไม่พบคำขอ หรืออนุมัติไปแล้ว" });
+        const totalCoins = request.total_coins || request.coins;
+        await query(`UPDATE topup_requests SET status = 'approved', approved_at = CURRENT_TIMESTAMP, approved_by = $1 WHERE id = $2`, [req.user.id, req.params.id]);
+        await query('UPDATE users SET coins = coins + $1 WHERE id = $2', [totalCoins, request.user_id]);
+        await query(`INSERT INTO purchase_history (user_id, title, type, price) VALUES ($1,$2,'topup',0)`, [request.user_id, `เติมเหรียญ ${Number(totalCoins).toLocaleString()} เหรียญ (฿${request.amount})`]);
+        await query(`INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES ($1,'topup_approved',$2,$3,$4)`,
+            [request.user_id, `เติมเหรียญสำเร็จ +${Number(totalCoins).toLocaleString()} เหรียญ`, `ชำระ ฿${request.amount} — รับ ${Number(totalCoins).toLocaleString()} เหรียญแล้ว`, req.params.id]);
+        res.json({ message: "อนุมัติสำเร็จ ผู้ใช้ได้รับเหรียญแล้ว!" });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
+});
+
+app.put('/admin/topups/:id/reject', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
+    const { note } = req.body;
+    const rejectNote = (note && note.trim()) ? note.trim() : 'ปฏิเสธโดยแอดมิน';
+    try {
+        const reqRes = await query(`SELECT * FROM topup_requests WHERE id = $1 AND status = 'pending'`, [req.params.id]);
+        if (!reqRes.rows[0]) return res.status(404).json({ message: "ไม่พบคำขอ หรือถูกดำเนินการแล้ว" });
+        const request = reqRes.rows[0];
+        await query(`UPDATE topup_requests SET status='rejected', approved_at=CURRENT_TIMESTAMP, approved_by=$1, note=$2 WHERE id=$3`, [req.user.id, rejectNote, req.params.id]);
+        await query(`INSERT INTO user_notifications (user_id, type, title, message, ref_id) VALUES ($1,'topup_rejected','คำขอเติมเหรียญถูกปฏิเสธ',$2,$3)`, [request.user_id, rejectNote, req.params.id]);
+        res.json({ message: "ปฏิเสธคำขอแล้ว" });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
+});
+
+// ❤️ Toggle Like
+app.post('/toggle-like', async (req, res) => {
     const { bookId, isLiked } = req.body;
-    const operator = isLiked ? '+ 1' : '- 1';
-    db.run(`UPDATE books SET likes = likes ${operator} WHERE id = ?`, [bookId], function(err) {
-        if (err) return res.status(500).json({ success: false, message: "Database error" });
-        db.get(`SELECT likes FROM books WHERE id = ?`, [bookId], (err, row) => {
-            if (err) return res.status(500).json({ success: false });
-            res.json({ success: true, likes: row ? row.likes : 0 });
-        });
-    });
+    try {
+        await query(`UPDATE books SET likes = likes ${isLiked ? '+ 1' : '- 1'} WHERE id = $1`, [bookId]);
+        const result = await query('SELECT likes FROM books WHERE id = $1', [bookId]);
+        res.json({ success: true, likes: result.rows[0] ? result.rows[0].likes : 0 });
+    } catch (err) { res.status(500).json({ success: false }); }
 });
 
+// QR Code
 const promptpay = require('promptpay-qr');
 const qrcode = require('qrcode');
-
-// API สำหรับสร้าง QR Code PromptPay
 app.get('/generate-qr', (req, res) => {
     const amount = parseFloat(req.query.amount);
-    if (!amount || amount <= 0) {
-        return res.status(400).json({ message: "Invalid amount" });
-    }
-
-    //เลขพร้อมเพย์
-    const mobileNumber = '0839947146'; 
+    if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount" });
+    const mobileNumber = '0839947146';
     const payload = promptpay(mobileNumber, { amount });
-
-    const options = {
-        color: {
-            dark: '#00316d',
-            light: '#ffffff'
-        }
-    };
-
-    qrcode.toDataURL(payload, options, (err, url) => {
+    qrcode.toDataURL(payload, { color: { dark: '#00316d', light: '#ffffff' } }, (err, url) => {
         if (err) return res.status(500).json({ message: "QR Generation Error" });
         res.json({ qrImage: url });
     });
 });
-app.get('/topup-history', authenticateToken, (req, res) => {
-    const userId = req.user.id;
-    db.all(
-        `SELECT t.*, u.username
-         FROM topup_requests t
-         JOIN users u ON t.user_id = u.id
-         WHERE t.user_id = ?
-         ORDER BY t.created_at DESC`, 
-        [userId], 
-        (err, rows) => {
-            if (err) return res.status(500).json(err);
-            res.json(rows);
+
+app.get('/topup-history', authenticateToken, async (req, res) => {
+    try {
+        const result = await query(`SELECT t.*, u.username FROM topup_requests t JOIN users u ON t.user_id = u.id WHERE t.user_id = $1 ORDER BY t.created_at DESC`, [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json(err); }
+});
+
+// 📢 Posts
+app.get('/posts', async (req, res) => {
+    try {
+        const posts = await query('SELECT * FROM posts ORDER BY created_at DESC');
+        const result = [];
+        for (const post of posts.rows) {
+            const comments = await query(`SELECT c.*, u.username, u.image as profile_image FROM comments c JOIN users u ON c.user_id = u.id WHERE c.post_id = $1 ORDER BY c.created_at ASC`, [post.id]);
+            const likes = await query(`SELECT COUNT(*) as count FROM post_likes WHERE post_id = $1 AND type = 'like'`, [post.id]);
+            const dislikes = await query(`SELECT COUNT(*) as count FROM post_likes WHERE post_id = $1 AND type = 'dislike'`, [post.id]);
+            result.push({ ...post, comments: comments.rows, likes: parseInt(likes.rows[0].count), dislikes: parseInt(dislikes.rows[0].count), userVote: null });
         }
-    );
+        res.json(result);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
-// ==========================================
-// 📢 API สำหรับระบบโพสต์ "เร็วๆ นี้" (News Feed)
-// ==========================================
 
-// [GET] ดึงข้อมูลโพสต์ทั้งหมด พร้อมคอมเมนต์ และสถานะการโหวตของ User ปัจจุบัน
-app.get('/posts', (req, res) => {
-    // 1. ดึงโพสต์ทั้งหมด
-    db.all("SELECT * FROM posts ORDER BY created_at DESC", [], (err, posts) => {
-        if (err) return res.status(500).json({ error: err.message });
-
-        // 2. ดึงคอมเมนต์ พร้อมชื่อคนคอมเมนต์
-        const sqlComments = `
-            SELECT c.*, u.username, u.image AS profile_image
-            FROM post_comments c
-            LEFT JOIN users u ON c.user_id = u.id
-            ORDER BY c.created_at ASC
-        `;
-        db.all(sqlComments, [], (err2, comments) => {
-            if (err2) return res.status(500).json({ error: err2.message });
-
-            // จับคู่คอมเมนต์ใส่ในโพสต์
-            let postsData = posts.map(post => {
-                post.comments = comments.filter(c => c.post_id === post.id);
-                return post;
-            });
-
-            // 3. เช็ค Token ว่ามีคนล็อกอินอยู่ไหม (เพื่อเช็คสีปุ่ม Like/Dislike)
-            const token = req.headers.authorization?.split(' ')[1];
-            if (!token) {
-                // ถ้าไม่ล็อกอิน ก็ส่งข้อมูลกลับไปเลย (ปุ่มจะเป็นสีเทา)
-                postsData = postsData.map(post => ({ ...post, user_vote: null }));
-                return res.json(postsData);
-            }
-
-            // 4. ถ้ามี Token ดึงประวัติการโหวตของ User คนนี้
-            try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-                const userId = decoded.id;
-
-                db.all("SELECT post_id, type FROM post_likes WHERE user_id = ?", [userId], (err3, userVotes) => {
-                    if (err3) return res.status(500).json({ error: err3.message });
-
-                    // จับคู่สถานะการโหวตใส่ในโพสต์
-                    postsData = postsData.map(post => {
-                        const vote = userVotes.find(v => v.post_id === post.id);
-                        return { ...post, user_vote: vote ? vote.type : null };
-                    });
-
-                    // ส่งข้อมูลแบบสมบูรณ์กลับไปให้ Frontend
-                    res.json(postsData);
-                });
-            } catch (jwtErr) {
-                // Token พัง ก็ทำเหมือนไม่ได้ล็อกอิน
-                postsData = postsData.map(post => ({ ...post, user_vote: null }));
-                res.json(postsData);
-            }
-        });
-    });
-});
-// 2. [POST] แอดมินสร้างโพสต์ใหม่
-app.post('/admin/add-post', verifyToken, uploadPost.single('image'), (req, res) => {
+app.post('/admin/add-post', verifyToken, uploadPost.single('image'), async (req, res) => {
     const { caption } = req.body;
-    // ✅ Cloudinary คืน URL ใน req.file.path
     const imageUrl = req.file ? req.file.path : null;
+    if (!caption && !imageUrl) return res.status(400).json({ message: "กรุณาใส่ข้อความหรือรูปภาพอย่างน้อยหนึ่งอย่าง" });
+    try {
+        const result = await query('INSERT INTO posts (caption, image_url) VALUES ($1, $2) RETURNING id', [caption, imageUrl]);
+        res.status(201).json({ message: "เพิ่มโพสต์สำเร็จ!", postId: result.rows[0].id });
+    } catch (err) { res.status(500).json({ error: "Database error" }); }
+});
 
-    if (!caption && !imageUrl) {
-        return res.status(400).json({ message: "กรุณาใส่ข้อความหรือรูปภาพอย่างน้อยหนึ่งอย่าง" });
-    }
-
-    const sql = "INSERT INTO posts (caption, image_url) VALUES (?, ?)";
-    
-    db.run(sql, [caption, imageUrl], function(err) {
-        if (err) {
-            console.error("Error creating post:", err);
-            return res.status(500).json({ error: "Database error" });
+app.delete('/admin/delete-post/:id', verifyToken, async (req, res) => {
+    try {
+        const result = await query('SELECT image_url FROM posts WHERE id = $1', [req.params.id]);
+        const row = result.rows[0];
+        if (row && row.image_url && row.image_url.includes('cloudinary.com')) {
+            const publicId = row.image_url.split('/').slice(-1)[0].split('.')[0];
+            cloudinary.uploader.destroy(`eto-posts/${publicId}`).catch(() => {});
         }
-        res.status(201).json({ message: "สร้างโพสต์สำเร็จ!", id: this.lastID });
-    });
+        await query('DELETE FROM posts WHERE id = $1', [req.params.id]);
+        res.json({ message: "ลบโพสต์สำเร็จ!" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 3. [DELETE] แอดมินลบโพสต์
-app.delete('/admin/delete-post/:id', verifyToken, (req, res) => {
-    const postId = req.params.id;
-
-    // หาชื่อไฟล์รูปก่อนเพื่อจะลบออกจากเครื่อง
-    db.get("SELECT image_url FROM posts WHERE id = ?", [postId], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-
-        if (row && row.image_url) {
-            // ลบรูปจาก Cloudinary ถ้า URL เป็นของ Cloudinary
-            if (row.image_url.includes('cloudinary.com')) {
-                const publicId = row.image_url.split('/').slice(-1)[0].split('.')[0];
-                cloudinary.uploader.destroy(`eto-posts/${publicId}`).catch(err => console.error('Cloudinary delete error:', err));
-            }
-        }
-
-        // ลบข้อมูลออกจาก Database
-        db.run("DELETE FROM posts WHERE id = ?", [postId], function(deleteErr) {
-            if (deleteErr) return res.status(500).json({ error: deleteErr.message });
-            res.json({ message: "ลบโพสต์และรูปภาพสำเร็จ!" });
-        });
-    });
-});
-app.post('/posts/:id/like', (req, res) => {
-    const postId = req.params.id;
-    db.run("UPDATE posts SET likes_count = likes_count + 1 WHERE id = ?", [postId], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ message: "เพิ่มไลค์สำเร็จ" });
-    });
+app.post('/posts/:postId/comments', verifyToken, async (req, res) => {
+    try {
+        const result = await query('INSERT INTO comments (post_id, user_id, content) VALUES ($1, $2, $3) RETURNING *', [req.params.postId, req.user.id, req.body.content]);
+        res.status(201).json(result.rows[0]);
+    } catch (err) { res.status(500).json({ error: "Database error" }); }
 });
 
-// [POST] โหวตโพสต์ (Like / Dislike) - จำกัด 1 คนต่อ 1 โพสต์ พร้อมระบบกดซ้ำยกเลิก (Toggle)
-app.post('/posts/:id/vote', verifyToken, (req, res) => {
-    const postId = req.params.id;
-    const userId = req.user.id;
+app.post('/posts/:postId/vote', verifyToken, async (req, res) => {
     const { type } = req.body;
-
-    if (!type || !['like', 'dislike'].includes(type)) {
-        return res.status(400).json({ message: "ข้อมูลประเภทโหวตไม่ถูกต้อง" });
-    }
-
-    db.get("SELECT type FROM post_likes WHERE post_id = ? AND user_id = ?", [postId, userId], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-
-        if (row) {
-            if (row.type === type) {
-                // Scenario A: กดซ้ำปุ่มเดิม -> ยกเลิกการโหวต (Undo)
-                db.run("DELETE FROM post_likes WHERE post_id = ? AND user_id = ?", [postId, userId], function(err2) {
-                    if (err2) return res.status(500).json({ error: err2.message });
-
-                    const columnToUpdate = type === 'like' ? 'likes_count' : 'dislikes_count';
-                    db.run(`UPDATE posts SET ${columnToUpdate} = ${columnToUpdate} - 1 WHERE id = ?`, [postId], function(err3) {
-                        if (err3) return res.status(500).json({ error: err3.message });
-                        res.json({ message: `ยกเลิกการกด ${type} สำเร็จ!`, action: 'removed', newVote: null });
-                    });
-                });
-
+    try {
+        const existing = await query('SELECT * FROM post_likes WHERE post_id = $1 AND user_id = $2', [req.params.postId, req.user.id]);
+        if (existing.rows[0]) {
+            if (existing.rows[0].type === type) {
+                await query('DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2', [req.params.postId, req.user.id]);
             } else {
-                // Scenario B: กดสลับปุ่ม (เช่น เคย Dislike ไว้ แล้วมากด Like)
-                db.run("UPDATE post_likes SET type = ? WHERE post_id = ? AND user_id = ?", [type, postId, userId], function(err2) {
-                    if (err2) return res.status(500).json({ error: err2.message });
-
-                    let sqlUpdatePosts = '';
-                    if (type === 'like') {
-                        sqlUpdatePosts = "UPDATE posts SET likes_count = likes_count + 1, dislikes_count = dislikes_count - 1 WHERE id = ?";
-                    } else {
-                        sqlUpdatePosts = "UPDATE posts SET dislikes_count = dislikes_count + 1, likes_count = likes_count - 1 WHERE id = ?";
-                    }
-
-                    db.run(sqlUpdatePosts, [postId], function(err3) {
-                        if (err3) return res.status(500).json({ error: err3.message });
-                        res.json({ message: `เปลี่ยนเป็นกด ${type} สำเร็จ!`, action: 'switched', newVote: type });
-                    });
-                });
+                await query('UPDATE post_likes SET type = $1 WHERE post_id = $2 AND user_id = $3', [type, req.params.postId, req.user.id]);
             }
-
         } else {
-            // User ยังไม่เคยโหวตโพสต์นี้เลย
-            db.run("INSERT INTO post_likes (post_id, user_id, type) VALUES (?, ?, ?)", [postId, userId, type], function(err2) {
-                if (err2) return res.status(500).json({ error: err2.message });
-
-                const columnToUpdate = type === 'like' ? 'likes_count' : 'dislikes_count';
-                db.run(`UPDATE posts SET ${columnToUpdate} = ${columnToUpdate} + 1 WHERE id = ?`, [postId], function(err3) {
-                    if (err3) return res.status(500).json({ error: err3.message });
-                    res.json({ message: `กด ${type} สำเร็จ!`, action: 'added', newVote: type });
-                });
-            });
+            await query('INSERT INTO post_likes (post_id, user_id, type) VALUES ($1, $2, $3)', [req.params.postId, req.user.id, type]);
         }
-    });
+        const likes = await query(`SELECT COUNT(*) as count FROM post_likes WHERE post_id = $1 AND type = 'like'`, [req.params.postId]);
+        const dislikes = await query(`SELECT COUNT(*) as count FROM post_likes WHERE post_id = $1 AND type = 'dislike'`, [req.params.postId]);
+        res.json({ likes: parseInt(likes.rows[0].count), dislikes: parseInt(dislikes.rows[0].count) });
+    } catch (err) { res.status(500).json({ error: "Database error" }); }
 });
 
-// 📢 posts table
-db.run(`CREATE TABLE IF NOT EXISTS posts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    caption TEXT,
-    image_url TEXT,
-    likes_count INTEGER DEFAULT 0,
-    dislikes_count INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`, (err) => {
-    if (!err) console.log("\u2705 Table 'posts' is ready.");
-});
-
-// 3. สร้าง Table สำหรับเก็บคอมเมนต์
-db.run(`CREATE TABLE IF NOT EXISTS post_comments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    post_id INTEGER,
-    user_id INTEGER,
-    comment_text TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`);
-
-// 4. [POST] ส่งคอมเมนต์
-app.post('/posts/:id/comment', verifyToken, (req, res) => {
-    const postId = req.params.id;
-    const { text } = req.body;
-    const userId = req.user?.id || 1;
-
-    if (!text) return res.status(400).json({ message: "กรุณาพิมพ์ข้อความ" });
-
-    db.run("INSERT INTO post_comments (post_id, user_id, comment_text) VALUES (?, ?, ?)", [postId, userId, text], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ message: "คอมเมนต์สำเร็จ", commentId: this.lastID });
-    });
-});
-
-// 1. [POST] อัปเดตประวัติการอ่าน (เรียกตอน User กดเข้าไปอ่านแต่ละตอน)
-// ==========================================
-// 📚 API สำหรับระบบจดจำประวัติการอ่าน
-// ==========================================
-
-// 1. [POST] อัปเดตประวัติการอ่าน (เรียกตอน User กดเข้าไปอ่านแต่ละตอน)
-app.post('/history/update', verifyToken, (req, res) => {
-    const userId = req.user.id;
+// 📖 Reading History
+app.post('/history/update', verifyToken, async (req, res) => {
     const { book_id, episode_number } = req.body;
-
-    // เช็คว่าเคยมีประวัติการอ่านเรื่องนี้ไหม
-    db.get("SELECT max_episode_number FROM reading_history WHERE user_id = ? AND book_id = ?", [userId, book_id], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-
-        if (row) {
-            if (Number(episode_number) > Number(row.max_episode_number)) {
-                db.run("UPDATE reading_history SET max_episode_number = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND book_id = ?",
-                    [episode_number, userId, book_id], function(err2) {
-                        if (err2) return res.status(500).json({ error: err2.message });
-                        return res.json({ message: "อัปเดตตอนที่อ่านไกลสุดเรียบร้อย", max_episode_number: episode_number });
-                    });
+    try {
+        const existing = await query('SELECT max_episode_number FROM reading_history WHERE user_id = $1 AND book_id = $2', [req.user.id, book_id]);
+        if (existing.rows[0]) {
+            if (Number(episode_number) > Number(existing.rows[0].max_episode_number)) {
+                await query('UPDATE reading_history SET max_episode_number = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2 AND book_id = $3', [episode_number, req.user.id, book_id]);
+                res.json({ message: "อัปเดตตอนที่อ่านไกลสุดเรียบร้อย", max_episode_number: episode_number });
             } else {
-                db.run("UPDATE reading_history SET updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND book_id = ?",
-                    [userId, book_id], function(err2) {
-                        if (err2) return res.status(500).json({ error: err2.message });
-                        return res.json({ message: "อัปเดตเวลาอ่านล่าสุด (ตอนไกลสุดยังเท่าเดิม)", max_episode_number: row.max_episode_number });
-                    });
+                await query('UPDATE reading_history SET updated_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND book_id = $2', [req.user.id, book_id]);
+                res.json({ message: "อัปเดตเวลาอ่านล่าสุด", max_episode_number: existing.rows[0].max_episode_number });
             }
         } else {
-            db.run("INSERT INTO reading_history (user_id, book_id, max_episode_number) VALUES (?, ?, ?)",
-                [userId, book_id, episode_number], function(err2) {
-                    if (err2) return res.status(500).json({ error: err2.message });
-                    return res.json({ message: "สร้างประวัติการอ่านใหม่", max_episode_number: episode_number });
-                });
+            await query('INSERT INTO reading_history (user_id, book_id, max_episode_number) VALUES ($1, $2, $3)', [req.user.id, book_id, episode_number]);
+            res.json({ message: "สร้างประวัติการอ่านใหม่", max_episode_number: episode_number });
         }
-    });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 2. [GET] ดึงเลขตอนที่อ่านไกลที่สุดของหนังสือแต่ละเล่ม
-app.get('/history/:bookId', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    const bookId = req.params.bookId;
-
-    db.get("SELECT max_episode_number FROM reading_history WHERE user_id = ? AND book_id = ?", [userId, bookId], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        
-        res.json({ max_episode_number: row ? row.max_episode_number : 0 });
-    });
-});
-// ── ตารางเก็บประวัติว่า user "เห็น" notification ตอนใหม่ไปแล้วหรือยัง ──────
-db.run(`CREATE TABLE IF NOT EXISTS seen_chapter_notifs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    episode_id INTEGER NOT NULL,
-    seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, episode_id)
-)`);
-// ── ตารางประวัติการซื้อ (History) ──
-db.run(`CREATE TABLE IF NOT EXISTS history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    book_id INTEGER,
-    title TEXT,
-    type TEXT,
-    amount INTEGER,
-    purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`, (err) => {
-    if (err) console.error("Error creating history table:", err.message);
-    else console.log("✅ History table ready.");
+app.get('/history/:bookId', verifyToken, async (req, res) => {
+    try {
+        const result = await query('SELECT max_episode_number FROM reading_history WHERE user_id = $1 AND book_id = $2', [req.user.id, req.params.bookId]);
+        res.json({ max_episode_number: result.rows[0] ? result.rows[0].max_episode_number : 0 });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── [GET] ดึงแจ้งเตือนตอนใหม่ (สำหรับคนที่กด Favorite หรือ ซื้อหนังสือเล่มนั้นไปแล้ว) ──────────
-app.get('/notifications/new-chapters', verifyToken, (req, res) => {
-    const userId = req.user.id;
-
-    const sql = `
-        SELECT 
-            e.id as episode_id,
-            e.book_id,
-            e.episode_number,
-            e.title as episode_title,
-            e.created_at || 'Z' as created_at,
-            strftime('%d/%m/%Y %H:%M', e.created_at) as formatted_time,
-            b.title as book_title
-        FROM episodes e
-        JOIN books b ON e.book_id = b.id
-        WHERE e.book_id IN (
-            SELECT book_id FROM favorites WHERE user_id = ?
-            UNION
-            SELECT book_id FROM history WHERE user_id = ? AND type = 'book'
-        )
-        ORDER BY e.created_at DESC
-        LIMIT 20
-    `;
-
-    db.all(sql, [userId, userId], (err, rows) => {
-        if (err) {
-            console.error("❌ Notification SQL Error:", err.message);
-            return res.status(500).json({ message: 'Database error', error: err.message });
-        }
-        res.json(rows);
-    });
+// 🔔 Notifications
+app.get('/notifications/new-chapters', verifyToken, async (req, res) => {
+    try {
+        const result = await query(`
+            SELECT e.id as episode_id, e.book_id, e.episode_number, e.title as episode_title, e.created_at, b.title as book_title
+            FROM episodes e JOIN books b ON e.book_id = b.id
+            WHERE e.book_id IN (
+                SELECT book_id FROM favorites WHERE user_id = $1
+                UNION SELECT book_id FROM history WHERE user_id = $1 AND type = 'book'
+            ) ORDER BY e.created_at DESC LIMIT 20
+        `, [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
 });
 
-// ── [POST] มาร์กว่า user "อ่าน / เห็น" notification ตอนนั้นแล้ว ──────────
-// POST /notifications/new-chapters/seen  body: { episodeIds: [1,2,3] }
-app.post('/notifications/new-chapters/seen', verifyToken, (req, res) => {
-    const userId = req.user.id;
+app.post('/notifications/new-chapters/seen', verifyToken, async (req, res) => {
     const { episodeIds } = req.body;
-
-    if (!Array.isArray(episodeIds) || episodeIds.length === 0) {
+    if (!Array.isArray(episodeIds) || episodeIds.length === 0)
         return res.status(400).json({ message: 'episodeIds ต้องเป็น array และต้องไม่ว่างเปล่า' });
-    }
-
-    const placeholders = episodeIds.map(() => '(?, ?)').join(', ');
-    const values = [];
-    episodeIds.forEach(id => values.push(userId, id));
-
-    db.run(
-        `INSERT OR IGNORE INTO seen_chapter_notifs (user_id, episode_id) VALUES ${placeholders}`,
-        values,
-        function(err) {
-            if (err) return res.status(500).json({ message: 'Database error', error: err.message });
-            res.json({ message: 'บันทึกสถานะแจ้งเตือนเรียบร้อย', marked: episodeIds.length });
+    try {
+        for (const id of episodeIds) {
+            await query('INSERT INTO seen_chapter_notifs (user_id, episode_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [req.user.id, id]);
         }
-    );
+        res.json({ message: 'บันทึกสถานะแจ้งเตือนเรียบร้อย', marked: episodeIds.length });
+    } catch (err) { res.status(500).json({ message: 'Database error' }); }
 });
 
-// ── [GET] user ดึงการแจ้งเตือนของตัวเอง (topup approved/rejected จาก admin) ──
-app.get('/user/notifications', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    db.all(
-        `SELECT un.*,
-                un.created_at || 'Z' as created_at,
-                strftime('%d/%m/%Y %H:%M', un.created_at) as formatted_time,
-                CASE WHEN un.type IN ('new_episode','episode_updated')
-                     THEN e.book_id ELSE NULL END as book_id
-         FROM user_notifications un
-         LEFT JOIN episodes e ON un.type IN ('new_episode','episode_updated') AND e.id = un.ref_id
-         WHERE un.user_id = ?
-         ORDER BY un.created_at DESC LIMIT 50`,
-        [userId],
-        (err, rows) => {
-            if (err) return res.status(500).json({ message: "Database error" });
-            res.json(rows);
-        }
-    );
+app.get('/user/notifications', verifyToken, async (req, res) => {
+    try {
+        const result = await query(`SELECT un.*, CASE WHEN un.type IN ('new_episode','episode_updated') THEN e.book_id ELSE NULL END as book_id
+            FROM user_notifications un LEFT JOIN episodes e ON un.type IN ('new_episode','episode_updated') AND e.id = un.ref_id
+            WHERE un.user_id = $1 ORDER BY un.created_at DESC LIMIT 50`, [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-// ── [PUT] user mark อ่านแล้วทั้งหมด ──────────────────────────────────────────
-app.put('/user/notifications/read-all', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    db.run(`UPDATE user_notifications SET is_read = 1 WHERE user_id = ?`, [userId], (err) => {
-        if (err) return res.status(500).json({ message: "Database error" });
+app.put('/user/notifications/read-all', verifyToken, async (req, res) => {
+    try {
+        await query('UPDATE user_notifications SET is_read = 1 WHERE user_id = $1', [req.user.id]);
         res.json({ message: "อ่านทั้งหมดแล้ว" });
-    });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
-// ── [PUT] user mark อ่านแล้ว 1 รายการ ────────────────────────────────────────
-app.put('/user/notifications/:id/read', verifyToken, (req, res) => {
-    const userId = req.user.id;
-    db.run(
-        `UPDATE user_notifications SET is_read = 1 WHERE id = ? AND user_id = ?`,
-        [req.params.id, userId],
-        (err) => {
-            if (err) return res.status(500).json({ message: "Database error" });
-            res.json({ message: "อ่านแล้ว" });
-        }
-    );
-});
-
-// ── [GET] admin ดึงการแจ้งเตือนที่รอ ──────────────────────────────────────────
-app.get('/admin/notifications', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
-
-    db.all(
-        `SELECT *, created_at || 'Z' as created_at, strftime('%d/%m/%Y %H:%M', created_at) as formatted_time FROM admin_notifications ORDER BY created_at DESC LIMIT 50`,
-        [],
-        (err, rows) => {
-            if (err) return res.status(500).json({ message: "Database error" });
-            res.json(rows);
-        }
-    );
-});
-
-// ── [PUT] admin mark การแจ้งเตือนว่าอ่านแล้ว ──────────────────────────────────
-app.put('/admin/notifications/read-all', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
-
-    db.run(`UPDATE admin_notifications SET is_read = 1`, [], (err) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json({ message: "อ่านทั้งหมดแล้ว" });
-    });
-});
-
-app.put('/admin/notifications/:id/read', verifyToken, (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
-
-    db.run(`UPDATE admin_notifications SET is_read = 1 WHERE id = ?`, [req.params.id], (err) => {
-        if (err) return res.status(500).json({ message: "Database error" });
+app.put('/user/notifications/:id/read', verifyToken, async (req, res) => {
+    try {
+        await query('UPDATE user_notifications SET is_read = 1 WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
         res.json({ message: "อ่านแล้ว" });
-    });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
+});
+
+app.get('/admin/notifications', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
+    try {
+        const result = await query('SELECT * FROM admin_notifications ORDER BY created_at DESC LIMIT 50');
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
+});
+
+app.put('/admin/notifications/read-all', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
+    try {
+        await query('UPDATE admin_notifications SET is_read = 1');
+        res.json({ message: "อ่านทั้งหมดแล้ว" });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
+});
+
+app.put('/admin/notifications/:id/read', verifyToken, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: "Forbidden" });
+    try {
+        await query('UPDATE admin_notifications SET is_read = 1 WHERE id = $1', [req.params.id]);
+        res.json({ message: "อ่านแล้ว" });
+    } catch (err) { res.status(500).json({ message: "Database error" }); }
 });
 
 // ================= START SERVER =================
-server.listen(port, () => {
-    console.log(`🚀 Server is running on port ${port}`);
+initDb().then(() => {
+    server.listen(port, () => console.log(`🚀 Server is running on port ${port}`));
+}).catch(err => {
+    console.error('❌ Failed to init DB:', err);
+    process.exit(1);
 });
