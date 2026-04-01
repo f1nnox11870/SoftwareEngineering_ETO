@@ -11,7 +11,7 @@ function Profile() {
 
   // ================= LOAD PROFILE =================
   useEffect(() => {
-    axios.get("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile", {
+    axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile`, {
       headers: {
         Authorization: `Bearer ${token}`
       }
@@ -24,7 +24,7 @@ function Profile() {
 
   // ================= UPDATE USERNAME =================
   const updateUsername = () => {
-    axios.put("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile/username",
+    axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile/username`,
       { username: newUsername },
       {
         headers: {
@@ -50,7 +50,7 @@ function Profile() {
   };
 
   const uploadImage = (img) => {
-    axios.put("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile/image",
+    axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile/image`,
       { image: img },
       {
         headers: {
@@ -68,7 +68,7 @@ function Profile() {
     const oldPassword = document.getElementById("oldPass").value;
     const newPassword = document.getElementById("newPass").value;
 
-    axios.put("${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile/password",
+    axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/profile/password`,
       { oldPassword, newPassword },
       {
         headers: {
